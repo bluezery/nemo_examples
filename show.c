@@ -156,7 +156,7 @@ typedef struct _cairo_glyph_line
 } cairo_glyph_line;
 
     static cairo_glyph_line *
-create_cairo_glyph_line(hb_buffer_t *buffer, double scale)
+create_cairo_glyph_line(hb_buffer_t *buffer, double scale, const char *text)
 {
     cairo_glyph_line *l = calloc(sizeof(cairo_glyph_line), 1);
     // ********** Consume Glyphs **********************//
@@ -173,12 +173,12 @@ create_cairo_glyph_line(hb_buffer_t *buffer, double scale)
     }
 
     // cluster
-    if (TEXT) {
-        l->utf8 = g_strndup(TEXT, strlen(TEXT));
+    if (text) {
+        l->utf8 = g_strndup(text, strlen(text));
         if (!l->utf8) {
             ERR("error!!\n");
         }
-        l->utf8_len = strlen(TEXT);
+        l->utf8_len = strlen(text);
         unsigned int i = 0;
         l->num_clusters = l->num_glyphs ? 1 : 0;
         for (i = 1 ; i < l->num_glyphs ; i++) {
@@ -645,7 +645,7 @@ int main(int argc, char *argv[])
     }
 
     // Mapping buffer for cairo glyph
-    l = create_cairo_glyph_line(hb_buffer, scale);
+    l = create_cairo_glyph_line(hb_buffer, scale, text);
     hb_buffer_destroy(hb_buffer);
 
     // create cairo font
@@ -661,6 +661,7 @@ int main(int argc, char *argv[])
     // width, height should be points
     int ww = ceil(w);
     int hh = ceil(h);
+
     //*********************** CAIRO ***********************//
     // create cairo surface create
     int param = 0;
