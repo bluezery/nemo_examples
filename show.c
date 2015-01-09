@@ -18,10 +18,6 @@
 #define FONT_FILE "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
 #define FONT_IDX 0
 #define FONT_SIZE 256
-const char *TEXT = "김태환";
-const char *DIRECTION = NULL;
-const char *SCRIPT = NULL;
-const char *LANG = NULL;
 
 #ifdef __GNUC__
 #define __UNUSED__ __attribute__((__unused__))
@@ -603,10 +599,10 @@ int main(int argc, char *argv[])
     double margin_bottom = 16;
     double w = 0, h = 0;
 
-    const char *text = TEXT;
-    const char *direction = DIRECTION;
-    const char *script = SCRIPT;
-    const char *lang = LANG;
+    const char *text = "김태환";
+    const char *direction = NULL;
+    const char *script = NULL;
+    const char *lang = NULL;
 
     // Cairo
     cairo_t *cr;
@@ -623,6 +619,7 @@ int main(int argc, char *argv[])
     // FreeType
     FT_Face ft_face;
 
+    // Start
 
     hb_font = create_hb_font(font_file, font_idx);
 
