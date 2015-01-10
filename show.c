@@ -17,7 +17,7 @@
 #define OUT_FILE "test"
 #define FONT_FILE "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
 #define FONT_IDX 0
-#define FONT_SIZE 256
+#define FONT_SIZE 40
 
 #ifdef __GNUC__
 #define __UNUSED__ __attribute__((__unused__))
@@ -155,7 +155,7 @@ typedef struct _cairo_glyph_line
     unsigned int utf8_len;
 } cairo_glyph_line;
 
-    static cairo_glyph_line *
+static cairo_glyph_line *
 create_cairo_glyph_line(hb_buffer_t *buffer, double scale, const char *text)
 {
     cairo_glyph_line *l = calloc(sizeof(cairo_glyph_line), 1);
@@ -398,7 +398,7 @@ create_cairo_ctx(cairo_surface_t *surface)
 }
 
     static void
-draw_cairo(cairo_t *cr, int line_len, cairo_glyph_line *l, double line_space,
+draw_cairo(cairo_t *cr, int line_len, cairo_glyph_line *l[], double line_space,
         double margin_left, double margin_top,
         unsigned int vertical)
 
@@ -433,8 +433,8 @@ draw_cairo(cairo_t *cr, int line_len, cairo_glyph_line *l, double line_space,
             cairo_set_source_rgba (cr, 1., 0., 0., .5);
             cairo_set_line_width (cr, 5);
             cairo_set_line_cap (cr, CAIRO_LINE_CAP_ROUND);
-            for (unsigned i = 0; i < l->num_glyphs; i++) {
-                cairo_move_to (cr, l->glyphs[i].x, l->glyphs[i].y);
+            for (unsigned i = 0; i < l[i]->num_glyphs; i++) {
+                cairo_move_to (cr, l[i]->glyphs[i].x, l[i]->glyphs[i].y);
                 cairo_rel_line_to (cr, 0, 0);
             }
             cairo_stroke (cr);
@@ -444,17 +444,22 @@ draw_cairo(cairo_t *cr, int line_len, cairo_glyph_line *l, double line_space,
 
         if (0 && cairo_surface_get_type (cairo_get_target (cr)) == CAIRO_SURFACE_TYPE_IMAGE) {
             /* cairo_show_glyphs() doesn't support subpixel positioning */
-            cairo_glyph_path (cr, l->glyphs, l->num_glyphs);
+            cairo_glyph_path (cr, l[i]->glyphs, l[i]->num_glyphs);
             cairo_fill (cr);
-        } else if (l->num_clusters)
+        } else if (l[i]->num_clusters) {
+            cairo_glyph_path (cr, l[i]->glyphs, l[i]->num_glyphs);
+            cairo_fill (cr);
+#if 0
             cairo_show_text_glyphs (cr,
-                    l->utf8, l->utf8_len,
-                    l->glyphs, l->num_glyphs,
-                    l->clusters, l->num_clusters,
-                    l->cluster_flags);
-        else
-            cairo_show_glyphs (cr, l->glyphs, l->num_glyphs);
-        l++;
+                    l[i]->utf8, l[i]->utf8_len,
+                    l[i]->glyphs, l[i]->num_glyphs,
+                    l[i]->clusters, l[i]->num_clusters,
+                    l[i]->cluster_flags);
+#endif
+            //LOG("ASDFASFASFASDFASD\n");
+        } else {
+            cairo_show_glyphs (cr, l[i]->glyphs, l[i]->num_glyphs);
+        }
     }
 
     cairo_restore (cr);
@@ -584,6 +589,39 @@ _create_cairo_surface(int type, int w, int h, void *closure_key)
 }
 
 
+char **read_file(const char *file, int *line_len)
+{
+#define BASIC_BUF_LEN 1024
+    if (!file || !line_len) {
+        ERR("file name is NULL or line_len is NULL");
+        return NULL;
+    }
+
+    char **line = NULL;
+    int idx = 0;
+
+    char *buffer = NULL;
+    size_t buffer_len;
+    //ssize_t text_len = 0;
+
+    FILE *fp = fopen(file, "r");
+    if (!fp) return NULL;
+
+    buffer = (char *)malloc(sizeof(char) * BASIC_BUF_LEN);
+    buffer_len = BASIC_BUF_LEN;
+
+    while (getline(&buffer, &buffer_len, fp) >= 0) {
+        line = (char **)realloc(line, sizeof(char *) * (idx + 1));
+        line[idx] = strdup(buffer);
+        idx++;
+    }
+    *line_len = idx;
+
+    free(buffer);
+    fclose(fp);
+    return line;
+}
+
 int main(int argc, char *argv[])
 {
     // Tuning values
@@ -591,7 +629,9 @@ int main(int argc, char *argv[])
     unsigned int font_idx = FONT_IDX;
     double font_size = FONT_SIZE;
 
-    int line_len = 1;
+    char **line_txt;
+    int line_len;
+
     double line_space = 0;
     double margin_left = 16;
     double margin_right = 16;
@@ -599,7 +639,6 @@ int main(int argc, char *argv[])
     double margin_bottom = 16;
     double w = 0, h = 0;
 
-    const char *text = "김태환";
     const char *direction = NULL;
     const char *script = NULL;
     const char *lang = NULL;
@@ -608,7 +647,7 @@ int main(int argc, char *argv[])
     cairo_t *cr;
     cairo_surface_t *surface;
     cairo_scaled_font_t *scaled_font;
-    cairo_glyph_line *l;
+    cairo_glyph_line **l;
     unsigned char is_vertical;
 
     // Harfubuzz
@@ -619,8 +658,17 @@ int main(int argc, char *argv[])
     // FreeType
     FT_Face ft_face;
 
-    // Start
+    if (argc != 2 || !argv[1]) {
+        ERR("Usage: show [file name]\n");
+        return 0;
+    }
+    line_txt = read_file(argv[1], &line_len);
+    if (!line_txt || !line_txt[0] || line_len <= 0) {
+        ERR("Err: line_txt is NULL or no string/line\n");
+        return 0;
+    }
 
+    //**************** Font Load ***********************//
     hb_font = create_hb_font(font_file, font_idx);
 
     // Calculate scale
@@ -629,14 +677,8 @@ int main(int argc, char *argv[])
     double scale = font_size/upem;
     LOG("font face upem: %u, font size: %lf, font scale: %lf\n", upem, font_size, scale);
 
-    hb_buffer = create_hb_buffer(text, NULL, NULL, direction, script, lang);
-    is_vertical = HB_DIRECTION_IS_VERTICAL (hb_buffer_get_direction(hb_buffer));
-
-    // font shaping for buffer
-    shape(hb_font, hb_buffer);
-
     // Get freetype face for cairo
-    ft_face = hb_ft_font_get_face(hb_font);
+    ft_face = hb_ft_font_get_face(hb_font_reference(hb_font));
     if (!ft_face) {
         FT_Library ft_lib;
         FT_Init_FreeType(&ft_lib);
@@ -644,29 +686,46 @@ int main(int argc, char *argv[])
         FT_New_Face(ft_lib, font_file, 0, &ft_face);
     }
 
-    // Mapping buffer for cairo glyph
-    l = create_cairo_glyph_line(hb_buffer, scale, text);
-    hb_buffer_destroy(hb_buffer);
+    //******************* Text Shaping *************************//
+    l = (cairo_glyph_line **)malloc(sizeof(cairo_glyph_line *) * line_len);
+    for (int i = 0 ; i < line_len ; i++) {
+        // Processing 1 line text
+        hb_buffer = create_hb_buffer(line_txt[i], NULL, NULL, direction, script, lang);
+        is_vertical = HB_DIRECTION_IS_VERTICAL (hb_buffer_get_direction(hb_buffer));
+
+        // font shaping for buffer
+        shape(hb_font, hb_buffer);
+
+        // Mapping buffer for cairo glyph
+        l[i] = create_cairo_glyph_line(hb_buffer, scale, line_txt[i]);
+        hb_buffer_destroy(hb_buffer);
+    }
 
     // create cairo font
     scaled_font = create_cairo_scaled_font(ft_face, font_size);
 
+#if 0
     // calculate surface size
     calc_surface_size(scaled_font, line_len, l, line_space,
             margin_left, margin_right, margin_top, margin_bottom,
             is_vertical,
             &w, &h);
-
-    cairo_user_data_key_t closure_key;
     // width, height should be points
     int ww = ceil(w);
     int hh = ceil(h);
+#endif
+
+    int ww, hh;
+    ww = 480;
+    hh = 480;
 
     //*********************** CAIRO ***********************//
     // create cairo surface create
+    cairo_user_data_key_t closure_key;
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);
     surface = _create_cairo_surface(param, ww, hh, &closure_key);
+    LOG("ww:%d hh:%d\n", cairo_image_surface_get_width(surface), cairo_image_surface_get_height(surface));
 
     // create cairo context
     cr = create_cairo_ctx(surface);
@@ -675,6 +734,7 @@ int main(int argc, char *argv[])
 
     // draw cairo
     draw_cairo(cr, line_len, l, line_space, margin_left, margin_top, is_vertical);
+    hb_font_destroy(hb_font);
 
 	closure_func func = cairo_surface_get_user_data (cairo_get_target (cr), &closure_key);
     if (func) func(cr, ww, hh);
@@ -682,8 +742,8 @@ int main(int argc, char *argv[])
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    free(l);
-    hb_font_destroy(hb_font);
+    for (int i = 0 ; i < 3 ; i++)
+        free(l[i]);
 
     /*
        for (unsigned int i = 0; i < line_len; i++) {
