@@ -1,5 +1,7 @@
-This is Test file
-Hello
-가나다라마바사
-Hebrew: עברית
+Latin: This is Test file
+Korean: 가나다라마바사
+Japanese: にほんご
+Chaniese: 中國語
+Hindi: हिन्दी
 Arabic: العربية
+Hebrew: עברית
