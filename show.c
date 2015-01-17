@@ -32,7 +32,7 @@
 #define LOG_COLOR_RED "\x1b[31m"
 #define LOG_COLOR_GREEN "\x1b[32m"
 #define LOG_COLOR_END "\x1b[0m"
-#define LOGFMT(COLOR, fmt, ...) do { fprintf(stderr, "[%s:%s:%d] " fmt , __FILE__,  __func__, __LINE__, ##__VA_ARGS__); } while (0);
+#define LOGFMT(COLOR, fmt, ...) do { fprintf(stderr, "[%s:%d][%s] " fmt , __FILE__,  __LINE__, __func__, ##__VA_ARGS__); } while (0);
 #define ERR(...) LOGFMT(LOG_COLOR_RED, ##__VA_ARGS__)
 #define LOG(...) LOGFMT(LOG_COLOR_GREEN, ##__VA_ARGS__)
 
@@ -667,7 +667,6 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
         glyphs[i].y = -(hb_glyph_poses[i].y_offset + y);
         x += hb_glyph_poses[i].x_advance;
         y += hb_glyph_poses[i].y_advance;
-        LOG("%d %d\n", i, x);
     }
     glyphs[i].index = -1;
     glyphs[i].x = x;
@@ -1049,7 +1048,8 @@ char **_read_file(const char *file, int *line_len)
 int main(int argc, char *argv[])
 {
     // Use font-config
-    const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
+    //const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
+    const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
     //const char *font_file = "/usr/share/fonts/opentype/cantarell/Cantarell-Regular.otf"; // OpenType
     //const char *font_file = "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf"; // fixed witdh
     unsigned int font_idx = 0;
@@ -1094,8 +1094,8 @@ int main(int argc, char *argv[])
     double margin_bottom = 0;
 
     // create cairo surface create
-    w = 480;
-    h = 480;
+    w = 1000;
+    h = 800;
     cairo_user_data_key_t closure_key;
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);
@@ -1111,7 +1111,6 @@ int main(int argc, char *argv[])
     for (int i = 0 ; i < line_len ; i++) {
         double w = mytext[i]->width;
         double h = mytext[i]->height;
-        LOG("%lf %lf\n", w, h);
         cairo_rectangle(cr, 0, h * i , w, h);
     }
     cairo_set_line_width(cr, 1);
