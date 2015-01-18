@@ -646,7 +646,6 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
     for (int i = 0 ; i < utf8_len ; i++) {
         if (!(utf8[i] >> 31)) {
            if (utf8[i] > 0x1F) {
-               printf("%d[%X,%c]\n", str_len, utf8[i], utf8[i]);
                str = (char *)realloc(str, sizeof(char) * (str_len + 1));
                str[str_len] = utf8[i];
                str_len++;
