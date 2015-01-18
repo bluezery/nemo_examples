@@ -32,7 +32,7 @@
 #define LOG_COLOR_RED "\x1b[31m"
 #define LOG_COLOR_GREEN "\x1b[32m"
 #define LOG_COLOR_END "\x1b[0m"
-#define LOGFMT(COLOR, fmt, ...) do { fprintf(stderr, "[%s:%d][%s] " fmt , __FILE__,  __LINE__, __func__, ##__VA_ARGS__); } while (0);
+#define LOGFMT(COLOR, fmt, ...) do { fprintf(stderr, "[%s:%d][%s] " fmt "\n", __FILE__,  __LINE__, __func__, ##__VA_ARGS__); } while (0);
 #define ERR(...) LOGFMT(LOG_COLOR_RED, ##__VA_ARGS__)
 #define LOG(...) LOGFMT(LOG_COLOR_GREEN, ##__VA_ARGS__)
 
@@ -71,11 +71,12 @@ typedef struct _Text
     double width, height;
 } Text;
 
+#define DEBUG
 #ifdef DEBUG
 static void
 _dump_cairo_font_extents(cairo_font_extents_t extents)
 {
-    LOG("ascent:%lf, descent:%lf, height:%lf, max_x_adv:%lf, max_y_adv:%lf\n",
+    LOG("ascent:%lf, descent:%lf, height:%lf, max_x_adv:%lf, max_y_adv:%lf",
          extents.ascent, extents.descent, extents.height, extents.max_x_advance,
          extents.max_y_advance);
 }
@@ -83,17 +84,94 @@ _dump_cairo_font_extents(cairo_font_extents_t extents)
 static void
 _dump_text(Text *text)
 {
-    LOG("[%d]%s\n", text->utf8_len, text->utf8);
-    LOG("vertical:%d backward: %d\n", text->is_vertical, text->is_backward);
-    LOG("num glyphs:[%3d]\n", text->num_glyphs);
+    LOG("[%d]%s", text->utf8_len, text->utf8);
+    LOG("vertical:%d backward: %d", text->is_vertical, text->is_backward);
+    LOG("num glyphs:[%3d]", text->num_glyphs);
     for(int i = 0 ; i < text->num_glyphs ; i++) {
-        LOG("[%3d]: index:%6lx, x:%3.3lf y:%3.3lf\n", i,
+        LOG("[%3d]: index:%6lX, x:%3.3lf y:%3.3lf", i,
             (text->glyphs)[i].index, (text->glyphs)[i].x, (text->glyphs)[i].y);
     }
-    LOG("num clusters:[%3d] cluster flags[%3d]\n", text->num_clusters, text->cluster_flags);
+    LOG("num clusters:[%3d] cluster flags[%3d]", text->num_clusters, text->cluster_flags);
     for(int i = 0 ; i < text->num_clusters ; i++) {
-        LOG("[%3d]: num_bytes:%3d, num_glyphs:%3d\n", i,
+        LOG("[%3d]: num_bytes:%3d, num_glyphs:%3d", i,
             (text->clusters)[i].num_bytes, (text->clusters)[i].num_glyphs);
+    }
+}
+
+static void
+_dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir, hb_buffer_content_type_t type, hb_font_t *font)
+{
+    LOG("codepoint:%4x, mask:%4x, cluster:%d, x_advance:%3d, y_advance:%3d, x_offset:%3d, y_offset:%3d",
+        info.codepoint, info.mask, info.cluster,
+        pos.x_advance, pos.y_advance, pos.x_offset, pos.y_offset);
+
+    if (font) {
+        hb_codepoint_t code;
+        hb_codepoint_t pcode = 0;
+
+        // Harfbuzz codepoint
+        if (type == HB_BUFFER_CONTENT_TYPE_UNICODE) { // before shaping, get codepoint from unicode
+            hb_font_get_glyph(font, info.codepoint, 0, &code);
+        } else {  // itself already codepint.
+            code = info.codepoint;
+        }
+
+        // Origin
+        hb_position_t org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y;
+        hb_font_get_glyph_origin_for_direction(font, code, dir, &org_x, &org_y);
+        hb_font_get_glyph_h_origin(font, code, &orgh_x, &orgh_y);
+        hb_font_get_glyph_v_origin(font, code, &orgv_x, &orgv_y);
+        LOG("Origin CurretDir[x:%d, y:%d] / hori(x:%d, y:%d)  vert(x:%d, y:%d)",
+            org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y);
+
+        // Advance
+        hb_position_t h_adv, v_adv;
+        hb_font_get_glyph_advance_for_direction(font, code, dir, &h_adv, &v_adv);
+        LOG("Advance[hori:%d vert:%d] / hori(%d), vert(%d)",
+            h_adv, v_adv,
+            hb_font_get_glyph_h_advance(font, code), hb_font_get_glyph_v_advance(font, code));
+
+        // Extents
+        hb_glyph_extents_t extd, ext;
+        hb_font_get_glyph_extents_for_origin(font, code, dir, &extd);
+        hb_font_get_glyph_extents(font, code, &ext);
+        LOG("Extents CurrentDir[x_bearing:%d, y_bearing:%d, width:%d, height:%d] [x_bearing:%d, y_bearing:%d, width:%d, height:%d]",
+            extd.x_bearing, extd.y_bearing, extd.width, extd.height,
+            ext.x_bearing, ext.y_bearing, ext.width, ext.height);
+
+        // Kerning
+        if (pcode != 0) {
+            hb_position_t x, y;
+            hb_position_t xx = 0, yy = 0;
+            if (HB_DIRECTION_IS_HORIZONTAL(dir))
+                xx = hb_font_get_glyph_h_kerning(font, code, pcode);
+            else
+                yy = hb_font_get_glyph_v_kerning(font, code, pcode);
+            hb_font_get_glyph_kerning_for_direction(font, code, pcode, dir, &x, &y);
+            LOG("kerning CurrentDir[x:%d y:%d] [x:%d, y:%d]", x, y, xx, yy);
+        }
+        pcode = code;
+
+#if 0
+        // Glyph name, Almost all fonts does not support it?
+        const char *name = "Ampersand";
+        hb_codepoint_t cc;
+        hb_font_get_glyph_from_name(font, name, -1, &cc);
+        LOG("\t\tcode: %6X", cc);
+
+        LOG("\t\t============= contour =============");
+        unsigned int idx = 0;
+        hb_position_t cx, cy, cxx, cyy;
+        while (hb_font_get_glyph_contour_point_for_origin(font, code, idx, dir, &cx, &cy)) {
+            if (!hb_font_get_glyph_contour_point(font, code, idx, &cxx, &cyy)) {
+                cxx = 0;
+                cyy = 0;
+            }
+            LOG("[%2d] cx: %d(%d), cy: %d(%d)", idx, cx, cxx, cy, cyy);
+            idx++;
+        }
+        LOG("\n\t\t==================================");
+#endif
     }
 }
 
@@ -103,107 +181,43 @@ _dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
     unsigned int x_ppem, y_ppem;
     int x_scale, y_scale;
     unsigned int num_glyphs;
+    hb_segment_properties_t prop;
+    hb_direction_t dir = hb_buffer_get_direction(buffer);
+    hb_buffer_content_type_t type = hb_buffer_get_content_type(buffer);
     hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(buffer, &num_glyphs);
     hb_glyph_position_t *poses = hb_buffer_get_glyph_positions(buffer, NULL);
+    hb_buffer_get_segment_properties(buffer, &prop);
+    hb_script_t script = hb_buffer_get_script(buffer);
+    hb_language_t lang = hb_buffer_get_language(buffer);
 
     hb_font_get_ppem(font, &x_ppem, &y_ppem);
     hb_font_get_scale(font, &x_scale, &y_scale);
-    LOG("========================== Font info ===============================\n");
-    LOG("x_ppem: %u, y_ppem: %u\n", x_ppem, y_ppem);
-    LOG("x_scale: %d, y_scale: %d\n", x_scale, y_scale);
-    LOG("========================== Buffer info ===============================\n");
-    LOG("\tcontent_type: %d [unicode = 1, glyphs]\n", hb_buffer_get_content_type(buffer));
-    LOG("\tdir: %d [LTR = 4, RTL, TTB, BTT]\n", hb_buffer_get_direction(buffer));
-    LOG("\tcode point: %d\n",  hb_buffer_get_replacement_codepoint(buffer));
-    LOG("\tflag: %u [DEFAULT = 0, BOT = 1u, EOT = 2u, IGNORE = 4u\n",  hb_buffer_get_flags(buffer));
+    LOG("========================== Font info ===============================");
+    LOG("\tx_ppem: %u, y_ppem: %u", x_ppem, y_ppem);
+    LOG("\tx_scale: %d, y_scale: %d", x_scale, y_scale);
+    LOG("========================== Buffer info ===============================");
+    LOG("\tcontent_type: %d [unicode = 1, glyphs] Length:%d", type, hb_buffer_get_length(buffer));
+    LOG("\tdir: %d [LTR = 4, RTL, TTB, BTT]", dir);
+    LOG("\tcode point: %d",  hb_buffer_get_replacement_codepoint(buffer));
+    LOG("\tflag: %u [DEFAULT = 0, BOT = 1u, EOT = 2u, IGNORE = 4u",  hb_buffer_get_flags(buffer));
+    LOG("\tScript:%c%c%c%c, Language:%s",  script >> 24, script >> 16,
+        script >> 8, script, hb_language_to_string(lang));
+    LOG("\tProperty (Dir:%d, script:%c%c%c%c, language:%s)", prop.direction,
+        prop.script >> 24, prop.script >> 16, prop.script >> 8, prop.script,
+        hb_language_to_string(prop.language));
 
-    hb_codepoint_t pcode = 0;
     for (unsigned int i = 0 ; i < num_glyphs ; i++) {
-        LOG("\t**************** Glyph Info. start *******************\n");
-        LOG("\t\t[%2d] cluster:%d codepoint:%6X, x_offset:%3d y_offset:%3d, x_advance:%3d, y_advance:%3d\n",
-            i, infos[i].cluster, infos[i].codepoint,
-            poses[i].x_offset, poses[i].y_offset,
-            poses[i].x_advance, poses[i].y_advance);
-
-        if (font) {
-            hb_codepoint_t code;
-            hb_direction_t dir = hb_buffer_get_direction(buffer);
-
-            // Harfbuzz codepoint
-            if (hb_buffer_get_content_type(buffer) == 1) { // if unicode, convert it as glyph codepoint.
-                hb_font_get_glyph(font, infos[i].codepoint, 0, &code);
-            } else {  // itself already codepint.
-                code = infos[i].codepoint;
-            }
-            LOG("\t\thb code: %6X\n", code);
-
-            // Origin
-            hb_position_t org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y;
-            hb_font_get_glyph_origin_for_direction(font, code, dir, &org_x, &org_y);
-            hb_font_get_glyph_h_origin(font, code, &orgh_x, &orgh_y);
-            hb_font_get_glyph_v_origin(font, code, &orgv_x, &orgv_y);
-            LOG("\t\tOrigin[x:%d, y:%d] / hori(x:%d, y:%d)  vert(x:%d, y:%d)\n",
-                org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y);
-
-            // Advance
-            hb_position_t h_adv, v_adv;
-            hb_font_get_glyph_advance_for_direction(font, code, dir, &h_adv, &v_adv);
-            LOG("\t\tAdvance[hori:%d vert:%d] / hori(%d), vert(%d)\n",
-                h_adv, v_adv,
-                hb_font_get_glyph_h_advance(font, code), hb_font_get_glyph_v_advance(font, code));
-
-            // Extents
-            hb_glyph_extents_t extd, ext;
-            hb_font_get_glyph_extents_for_origin(font, code, dir, &extd);
-            hb_font_get_glyph_extents(font, code, &ext);
-            LOG("\t\tx_bearing: %d, y_bearing: %d, width: %d, height: %d  x_bearing: %d, y_bearing: %d, width: %d, height: %d\n",
-                extd.x_bearing, extd.y_bearing, extd.width, extd.height,
-                ext.x_bearing, ext.y_bearing, ext.width, ext.height);
-
-            // Kerning
-            if (pcode != 0) {
-                hb_position_t x, y;
-                hb_position_t xx = 0, yy = 0;
-                if (HB_DIRECTION_IS_HORIZONTAL(hb_buffer_get_direction(buffer)))
-                    xx = hb_font_get_glyph_h_kerning(font, code, pcode);
-                else
-                    yy = hb_font_get_glyph_v_kerning(font, code, pcode);
-                hb_font_get_glyph_kerning_for_direction(font, code, pcode, dir, &x, &y);
-                LOG("\t\tkerning x:%d(%d), y:%d(%d)\n", x, xx, y, yy);
-            }
-            pcode = code;
-
-#if 0
-            // Glyph name, Almost all fonts does not support it?
-            const char *name = "Ampersand";
-            hb_codepoint_t cc;
-            hb_font_get_glyph_from_name(font, name, -1, &cc);
-            LOG("\t\tcode: %6X\n", cc);
-
-            LOG("\t\t============= contour =============\n");
-            unsigned int idx = 0;
-            hb_position_t cx, cy, cxx, cyy;
-            while (hb_font_get_glyph_contour_point_for_origin(font, code, idx, dir, &cx, &cy)) {
-                if (!hb_font_get_glyph_contour_point(font, code, idx, &cxx, &cyy)) {
-                    cxx = 0;
-                    cyy = 0;
-                }
-                LOG("[%2d] cx: %d(%d), cy: %d(%d)", idx, cx, cxx, cy, cyy);
-                idx++;
-            }
-            LOG("\n\t\t==================================\n");
-#endif
-        }
-        LOG("\t**************** Glyph Info. End *********************\n");
+        LOG("==================== [%d] Glyph info =========================", i);
+        _dump_hb_glyph(infos[i], poses[i], dir, type, font);
     }
 }
 
 static void
 _dump_cairo_glyph(cairo_glyph_t *glyph, unsigned int num_glyph)
 {
-    LOG("========================== cairo glyphs info ===============================\n");
+    LOG("========================== cairo glyphs info ===============================");
     for (unsigned int i = 0 ; i < num_glyph ; i++) {
-        LOG("[%2d] index: %6lx, x:%7.2lf y:%7.2lf\n",
+        LOG("[%2d] index: %6lX, x:%7.2lf y:%7.2lf",
             i, glyph[i].index, glyph[i].x, glyph[i].y);
     }
 }
@@ -211,9 +225,9 @@ _dump_cairo_glyph(cairo_glyph_t *glyph, unsigned int num_glyph)
 static void
 _dump_cairo_text_cluster(cairo_text_cluster_t *cluster, unsigned int num_cluster)
 {
-    LOG("========================== cairo clusters info ===============================\n");
+    LOG("========================== cairo clusters info ===============================");
     for (unsigned int i = 0 ; i < num_cluster ; i++) {
-        LOG("[%2d] num_bytes: %d, num_glyphs: %d\n",
+        LOG("[%2d] num_bytes: %d, num_glyphs: %d",
             i, cluster[i].num_bytes, cluster[i].num_glyphs);
     }
 }
@@ -221,25 +235,25 @@ _dump_cairo_text_cluster(cairo_text_cluster_t *cluster, unsigned int num_cluster
 static void
 _dump_ft_face(FT_Face ft_face)
 {
-    LOG("===================== Font Face Info ==================\n");
-    LOG("has vertical: %ld\n", FT_HAS_VERTICAL(ft_face));
+    LOG("===================== Font Face Info ==================");
+    LOG("has vertical: %ld", FT_HAS_VERTICAL(ft_face));
     LOG("has horizontal: %ld", FT_HAS_HORIZONTAL(ft_face));
     LOG("has kerning: %ld", FT_HAS_KERNING(ft_face));
-    LOG("sfnt: %ld\n", FT_IS_SFNT(ft_face));
-    LOG("trick: %ld\n", FT_IS_TRICKY(ft_face));
-    LOG("scalable: %ld\n", FT_IS_SCALABLE(ft_face));
-    LOG("fixed_width: %ld\n", FT_IS_FIXED_WIDTH(ft_face));
-    LOG("CID: %ld\n", FT_IS_CID_KEYED(ft_face)); // CID(Character Identifier Font),
-    LOG("bitmap: %ld\n", FT_HAS_FIXED_SIZES(ft_face));
-    LOG("color: %ld\n", FT_HAS_COLOR(ft_face));
-    LOG("multiple master: %ld\n", FT_HAS_MULTIPLE_MASTERS(ft_face));
-    LOG("w:%ld h:%ld hbx:x %ld, hby:%ld, hd:%ld, vbx:%ld, vby:%ld, vd:%ld\n",
+    LOG("sfnt: %ld", FT_IS_SFNT(ft_face));
+    LOG("trick: %ld", FT_IS_TRICKY(ft_face));
+    LOG("scalable: %ld", FT_IS_SCALABLE(ft_face));
+    LOG("fixed_width: %ld", FT_IS_FIXED_WIDTH(ft_face));
+    LOG("CID: %ld", FT_IS_CID_KEYED(ft_face)); // CID(Character Identifier Font),
+    LOG("bitmap: %ld", FT_HAS_FIXED_SIZES(ft_face));
+    LOG("color: %ld", FT_HAS_COLOR(ft_face));
+    LOG("multiple master: %ld", FT_HAS_MULTIPLE_MASTERS(ft_face));
+    LOG("w:%ld h:%ld hbx:x %ld, hby:%ld, hd:%ld, vbx:%ld, vby:%ld, vd:%ld",
             ft_face->glyph->metrics.width, ft_face->glyph->metrics.height,
             ft_face->glyph->metrics.horiBearingX, ft_face->glyph->metrics.horiBearingY,
             ft_face->glyph->metrics.horiAdvance,
             ft_face->glyph->metrics.vertBearingX, ft_face->glyph->metrics.vertBearingY,
             ft_face->glyph->metrics.vertAdvance);
-    LOG("========================================================\n");
+    LOG("========================================================");
 }
 
 #if 0
@@ -267,16 +281,16 @@ create_file_map(const char *file)
     size_t len;
 
     if (!file) {
-        ERR("file is NULL\n");
+        ERR("file is NULL");
         return NULL;
     }
     if ((fd = open(file, O_RDONLY)) <= 0) {
-        ERR("open failed\n");
+        ERR("open failed");
         return NULL;
     }
 
     if (fstat(fd, &st) == -1) {
-        ERR("fstat failed\n");
+        ERR("fstat failed");
         close(fd);
         return NULL;
     }
@@ -289,7 +303,7 @@ create_file_map(const char *file)
     len = st.st_size;
     data = mmap(NULL, len, PROT_READ, MAP_PRIVATE, fd, 0);
     if (data == MAP_FAILED) {
-        ERR("mmap failed: %s, len:%lu, fd:%d\n", strerror(errno), len, fd);
+        ERR("mmap failed: %s, len:%lu, fd:%d", strerror(errno), len, fd);
         close(fd);
         return NULL;
     }
@@ -305,7 +319,7 @@ void destroy_file_map(File_Map *fmap)
 {
     if (!fmap) return;
     if (munmap(fmap->data, fmap->len) < 0)
-        ERR("munmap failed\n");
+        ERR("munmap failed");
 }
 
 cairo_scaled_font_t *
@@ -317,11 +331,11 @@ create_cairo_scaled_font(FT_Face ft_face, const char *font_file, double font_siz
     cairo_scaled_font_t *scaled_font;
 
     if (!ft_face) {
-        LOG("hb ft font get face failed. Instead create ft face\n");
+        LOG("hb ft font get face failed. Instead create ft face");
         FT_Library ft_lib;
         if (FT_Init_FreeType(&ft_lib) ||
             FT_New_Face(ft_lib, font_file, 0, &ft_face)) {
-            ERR("FT Init FreeType or FT_New_Face failed\n");
+            ERR("FT Init FreeType or FT_New_Face failed");
         }
     }
     if (ft_face) {
@@ -329,7 +343,7 @@ create_cairo_scaled_font(FT_Face ft_face, const char *font_file, double font_siz
         if (cairo_font_face_set_user_data(cairo_face, NULL, ft_face,
                     (cairo_destroy_func_t)FT_Done_Face)
             || cairo_font_face_status(cairo_face) != CAIRO_STATUS_SUCCESS) {
-            ERR("cairo ft font face create for ft face failed\n");
+            ERR("cairo ft font face create for ft face failed");
             cairo_font_face_destroy(cairo_face);
             FT_Done_Face(ft_face);
             return NULL;
@@ -390,20 +404,20 @@ _create_font(const char *file, unsigned int idx, int size)
     Font *myfont;
 
     if (!file) {
-        ERR("font file is NULL\n");
+        ERR("font file is NULL");
         return NULL;
     }
 
     fmap = create_file_map(file);
     if (!fmap->data || !fmap->len) {
-        ERR("font data is NULL or length is zero\n");
+        ERR("font data is NULL or length is zero");
         return NULL;
     }
 
     blob = hb_blob_create(fmap->data, fmap->len,
             HB_MEMORY_MODE_READONLY_MAY_MAKE_WRITABLE, fmap, (hb_destroy_func_t)destroy_file_map);
     if (!blob) {
-        ERR("hb blob create failed\n");
+        ERR("hb blob create failed");
         destroy_file_map(fmap);
         return NULL;
     }
@@ -411,14 +425,14 @@ _create_font(const char *file, unsigned int idx, int size)
     face = hb_face_create (blob, idx);
     hb_blob_destroy(blob);
     if (!face) {
-        ERR("hb face create failed\n");
+        ERR("hb face create failed");
         return NULL;
     }
     // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
     // upem(Unit per em) is for master (or Em) space
     upem = hb_face_get_upem(face);
     if (upem <= 0) {
-        ERR("impossible upem!!\n");
+        ERR("impossible upem!!");
         hb_face_destroy(face);
         return NULL;
     }
@@ -426,7 +440,7 @@ _create_font(const char *file, unsigned int idx, int size)
     hb_font = hb_font_create(face);
     hb_face_destroy(face);
     if (!hb_font) {
-        ERR("hb font create failed\n");
+        ERR("hb font create failed");
         return NULL;
     }
     hb_font_set_scale(hb_font, upem, upem);
@@ -446,7 +460,7 @@ _create_font(const char *file, unsigned int idx, int size)
     // Create cairo drawing font
     cairo_font = create_cairo_scaled_font(hb_ft_font_get_face(hb_font), file, upem);
     if (!cairo_font) {
-        ERR("create cairo scaled font failed\n");
+        ERR("create cairo scaled font failed");
         hb_font_destroy(hb_font);
         return NULL;
     }
@@ -485,7 +499,7 @@ _create_hb_buffer(const char *utf8, unsigned int utf8_len, const char *dir, cons
     // *********** Buffer creation ***********//
     hb_buffer = hb_buffer_create ();
     if (!hb_buffer_allocation_successful(hb_buffer)) {
-        ERR("hb buffer create failed\n");
+        ERR("hb buffer create failed");
         return NULL;
     }
     hb_buffer_clear_contents(hb_buffer);
@@ -528,7 +542,7 @@ _create_hb_buffer(const char *utf8, unsigned int utf8_len, const char *dir, cons
             num_features++;
             hb_features = (hb_feature_t *)realloc(hb_features, sizeof(hb_feature_t) * num_features);
             if (!hb_feature_from_string(tok, strlen(tok), &hb_features[num_features -1])) {
-                ERR("hb feature from string failed\n");
+                ERR("hb feature from string failed");
             }
             org = NULL;
         }
@@ -573,7 +587,7 @@ _create_hb_buffer(const char *utf8, unsigned int utf8_len, const char *dir, cons
     // Each glyph's unicode is mapped into glyph's codepoint. (e.g. U+D55C => CE0)
     if (!hb_shape_full(hb_font, hb_buffer, hb_features, num_features, hb_shapers)) {
         hb_buffer_set_length(hb_buffer, 0);
-        ERR("hb shape full failed\n");
+        ERR("hb shape full failed");
         if (hb_features) free(hb_features);
         hb_buffer_destroy(hb_buffer);
         return NULL;
@@ -586,21 +600,23 @@ _create_hb_buffer(const char *utf8, unsigned int utf8_len, const char *dir, cons
 }
 
 static void
-_destroy_text(Text *mytext)
+_destroy_text(Text *text)
 {
-    if (!mytext) return;
-    cairo_text_cluster_free(mytext->clusters);
-    cairo_glyph_free(mytext->glyphs);
-    free(mytext->utf8);
-    free(mytext);
+    if (!text) return;
+    cairo_text_cluster_free(text->clusters);
+    cairo_glyph_free(text->glyphs);
+    free(text->utf8);
+    free(text);
 }
 
 static Text *
 _create_text(const char *utf8, const char *dir, const char *script, const char *lang,
         const char *features, Font *font)
 {
-    Text *mytext;
+    Text *text;
 
+    unsigned int str_len = 0;
+    char *str = NULL;
     unsigned int utf8_len;
     bool is_backward;
 
@@ -618,15 +634,27 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
     double width, height;
 
     if (!utf8 || !font) {
-        ERR("utf8 is NULL or font is NULL\n");
+        ERR("utf8 is NULL or font is NULL");
         return NULL;
     }
-
     utf8_len = strlen(utf8);
     if (utf8_len == 0) {
-        ERR("utf8 length is 0\n");
+        ERR("utf8 length is 0");
         return NULL;
     }
+    // Remove special characters
+    for (int i = 0 ; i < utf8_len ; i++) {
+        if (!(utf8[i] >> 31)) {
+           if (utf8[i] > 0x1F) {
+               printf("%d[%X,%c]\n", str_len, utf8[i], utf8[i]);
+               str = (char *)realloc(str, sizeof(char) * (str_len + 1));
+               str[str_len] = utf8[i];
+               str_len++;
+            }
+        }
+    }
+    utf8 = str;
+    utf8_len = str_len;
 
     hb_buffer = _create_hb_buffer(utf8, utf8_len, dir, script, lang, features, font->shapers, font->hb_font);
 
@@ -646,7 +674,7 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
     }
     clusters = cairo_text_cluster_allocate(num_clusters);
     if (!clusters) {
-        ERR("cairo text cluster allocate failed!!\n");
+        ERR("cairo text cluster allocate failed!!");
         hb_buffer_destroy(hb_buffer);
         return NULL;
     }
@@ -654,7 +682,7 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
 
     glyphs = cairo_glyph_allocate (num_glyphs + 1);
     if (!glyphs) {
-        ERR("cairo glyph allocate failed\n");
+        ERR("cairo glyph allocate failed");
         hb_buffer_destroy(hb_buffer);
         return NULL;
     }
@@ -723,24 +751,24 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
         clusters[cluster].num_bytes = utf8 + utf8_len - start;
     }
 
-    mytext = (Text *)malloc(sizeof(Text));
-    mytext->utf8 = strdup(utf8);
-    mytext->utf8_len = utf8_len;
-    mytext->is_vertical = HB_DIRECTION_IS_VERTICAL (hb_buffer_get_direction(hb_buffer));
-    mytext->is_backward = is_backward;
+    text = (Text *)malloc(sizeof(Text));
+    text->utf8 = strdup(utf8);
+    text->utf8_len = utf8_len;
+    text->is_vertical = HB_DIRECTION_IS_VERTICAL (hb_buffer_get_direction(hb_buffer));
+    text->is_backward = is_backward;
 
-    mytext->num_glyphs = num_glyphs;
-    mytext->glyphs = glyphs;
+    text->num_glyphs = num_glyphs;
+    text->glyphs = glyphs;
 
-    mytext->num_clusters = num_clusters;
-    mytext->clusters = clusters;
-    mytext->cluster_flags = cluster_flags;
-    mytext->width = width;
-    mytext->height = height;
+    text->num_clusters = num_clusters;
+    text->clusters = clusters;
+    text->cluster_flags = cluster_flags;
+    text->width = width;
+    text->height = height;
 
     hb_buffer_destroy(hb_buffer);
 
-    return mytext;
+    return text;
 }
 
 /*
@@ -777,7 +805,7 @@ calc_surface_size(cairo_scaled_font_t *scaled_font,
     h += margin_top + margin_bottom;
     *width = w;
     *height = h;
-    //LOG("w:%lf h:%lf\n", w, h);
+    //LOG("w:%lf h:%lf", w, h);
 }
 */
 
@@ -911,13 +939,13 @@ void write_png_stream(cairo_t *cr, int w __UNUSED__, int h __UNUSED__)
     cairo_status_t status;
 
     cairo_surface_t *surface = cairo_get_target(cr);
-    if (!surface) ERR("cairo get target failed\n");
+    if (!surface) ERR("cairo get target failed");
 
     status = cairo_surface_write_to_png_stream(surface,
             stdio_write_func,
             NULL);
     if (status != CAIRO_STATUS_SUCCESS)
-        ERR("error:%s\n", cairo_status_to_string(status));
+        ERR("error:%s", cairo_status_to_string(status));
 }
 
 void render_evas(cairo_t *cr, int w, int h)
@@ -963,7 +991,7 @@ _cairo_img_surface_create(closure_func func,
 {
     cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, w, h);
     cairo_status_t status = cairo_surface_status(surface);
-    if (status != CAIRO_STATUS_SUCCESS) ERR("error:%s\n", cairo_status_to_string(status));
+    if (status != CAIRO_STATUS_SUCCESS) ERR("error:%s", cairo_status_to_string(status));
 
     if (cairo_surface_set_user_data(surface,
                 key,
@@ -1026,7 +1054,7 @@ char **_read_file(const char *file, int *line_len)
 
     fp = fopen(file, "r");
     if (!fp) {
-        ERR("%s\n", strerror(errno));
+        ERR("%s", strerror(errno));
         return NULL;
     }
 
@@ -1062,14 +1090,14 @@ int main(int argc, char *argv[])
     int w, h;
 
     Font *myfont;
-    Text **mytext;
+    Text **text;
 
     // Cairo
     cairo_t *cr;
     cairo_surface_t *surface;
 
     if (argc != 2 || !argv[1]) {
-        ERR("Usage: show [file name]\n");
+        ERR("Usage: show [file name]");
         return 0;
     }
 
@@ -1077,12 +1105,12 @@ int main(int argc, char *argv[])
 
     line_txt = _read_file(argv[1], &line_len);
     if (!line_txt || !line_txt[0] || line_len <= 0) {
-        ERR("Err: line_txt is NULL or no string or length is 0\n");
+        ERR("Err: line_txt is NULL or no string or length is 0");
         return -1;
     }
-    mytext = (Text **)malloc(sizeof(Text *) * line_len);
+    text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
-        mytext[i] = _create_text(line_txt[i], NULL, NULL, NULL, NULL, myfont);
+        text[i] = _create_text(line_txt[i], NULL, NULL, NULL, NULL, myfont);
         free(line_txt[i]);
     }
     free(line_txt);
@@ -1106,11 +1134,11 @@ int main(int argc, char *argv[])
     cairo_set_scaled_font(cr, myfont->cairo_font);
 
     // draw cairo
-    draw_cairo(cr, myfont, line_len, mytext, line_space, margin_left, margin_top, false);
+    draw_cairo(cr, myfont, line_len, text, line_space, margin_left, margin_top, false);
 
     for (int i = 0 ; i < line_len ; i++) {
-        double w = mytext[i]->width;
-        double h = mytext[i]->height;
+        double w = text[i]->width;
+        double h = text[i]->height;
         cairo_rectangle(cr, 0, h * i , w, h);
     }
     cairo_set_line_width(cr, 1);
@@ -1123,8 +1151,8 @@ int main(int argc, char *argv[])
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    for (int i = 0 ; i < line_len ; i++) _destroy_text(mytext[i]);
-    free(mytext);
+    for (int i = 0 ; i < line_len ; i++) _destroy_text(text[i]);
+    free(text);
 
     _destroy_font(myfont);
 
