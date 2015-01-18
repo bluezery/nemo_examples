@@ -440,7 +440,7 @@ _create_font(const char *file, unsigned int idx, int size)
     hb_font_set_scale(hb_font, upem, upem);
 
     // You can choose backend free type or open type (harfbuzz internal) or your custom
-    //hb_ft_font_set_funcs(hb_font);   // free type backend
+    //hb_ft_font_set_funcs(hb_font);   // free type backend // FIXME: text width is weired
     hb_ot_font_set_funcs(hb_font);   // open type backend
 #if 0 // Custom backend
     hb_font_set_funcs(font2, func, NULL, NULL);
@@ -646,20 +646,18 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
         ERR("utf8 length is 0");
         return NULL;
     }
-#if 0
     // Remove special characters
     for (int i = 0 ; i < utf8_len ; i++) {
-        if (!(utf8[i] >> 31)) {
-           if (utf8[i] > 0x1F) {
-               str = (char *)realloc(str, sizeof(char) * (str_len + 1));
-               str[str_len] = utf8[i];
-               str_len++;
-            }
+        if (utf8[i] >> 31 ||
+            (utf8[i] > 0x1F)) {
+            str = (char *)realloc(str, sizeof(char) * (str_len + 1));
+            str[str_len] = utf8[i];
+            str_len++;
         }
     }
     utf8 = str;
     utf8_len = str_len;
-#endif
+
     hb_buffer = _create_hb_buffer(utf8, utf8_len, dir, script, lang, features, font->shapers, font->hb_font);
 
     // Convert from harfbuzz glyphs to cairo glyphs
@@ -701,10 +699,10 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
         y += hb_glyph_poses[i].y_advance;
     }
     glyphs[i].index = -1;
-    glyphs[i].x = x;
-    glyphs[i].y = y;
+    glyphs[i].x = x * font->scale;
+    glyphs[i].y = y * font->scale;
 
-    width = (double) x * font->scale;
+    width = glyphs[i].x ;
     height = font->height;
 
     is_backward = HB_DIRECTION_IS_BACKWARD(hb_buffer_get_direction(hb_buffer));
