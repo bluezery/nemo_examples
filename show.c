@@ -253,6 +253,8 @@ _dump_ft_face(FT_Face ft_face)
             ft_face->glyph->metrics.horiAdvance,
             ft_face->glyph->metrics.vertBearingX, ft_face->glyph->metrics.vertBearingY,
             ft_face->glyph->metrics.vertAdvance);
+    LOG("max_advance_width; %d max_advance_height: %d",
+        ft_face->max_advance_width, ft_face->max_advance_height);
     LOG("========================================================");
 }
 
@@ -330,14 +332,6 @@ create_cairo_scaled_font(FT_Face ft_face, const char *font_file, double font_siz
     cairo_font_options_t *font_options;
     cairo_scaled_font_t *scaled_font;
 
-    if (!ft_face) {
-        LOG("hb ft font get face failed. Instead create ft face");
-        FT_Library ft_lib;
-        if (FT_Init_FreeType(&ft_lib) ||
-            FT_New_Face(ft_lib, font_file, 0, &ft_face)) {
-            ERR("FT Init FreeType or FT_New_Face failed");
-        }
-    }
     if (ft_face) {
         cairo_face = cairo_ft_font_face_create_for_ft_face(ft_face, 0);
         if (cairo_font_face_set_user_data(cairo_face, NULL, ft_face,
@@ -350,7 +344,6 @@ create_cairo_scaled_font(FT_Face ft_face, const char *font_file, double font_siz
         }
     } else {
         ERR("Something wrong. Testing font is just created");
-        // FIXME: Just for testing
         cairo_face = cairo_toy_font_face_create("@cairo:sans",
                 CAIRO_FONT_SLANT_NORMAL,
                 CAIRO_FONT_WEIGHT_NORMAL);
@@ -402,6 +395,7 @@ _create_font(const char *file, unsigned int idx, int size)
     double scale;
 
     Font *myfont;
+    FT_Face ft_face;
 
     if (!file) {
         ERR("font file is NULL");
@@ -456,9 +450,19 @@ _create_font(const char *file, unsigned int idx, int size)
     hb_font_funcs_set_glyph_h_kerning_func(font_funcs, xxx, NULL, NULL);
     //...
 #endif
+    ft_face = hb_ft_font_get_face(hb_font);
+    if (!ft_face) {
+        LOG("hb ft font get face failed. Instead create ft face");
+        FT_Library ft_lib;
+        if (FT_Init_FreeType(&ft_lib) ||
+            FT_New_Face(ft_lib, file, 0, &ft_face)) {
+            ERR("FT Init FreeType or FT_New_Face failed");
+        }
+    }
 
     // Create cairo drawing font
-    cairo_font = create_cairo_scaled_font(hb_ft_font_get_face(hb_font), file, upem);
+    cairo_font = create_cairo_scaled_font(ft_face, file,
+            (double)size * upem / ft_face->max_advance_height);
     if (!cairo_font) {
         ERR("create cairo scaled font failed");
         hb_font_destroy(hb_font);
@@ -466,7 +470,7 @@ _create_font(const char *file, unsigned int idx, int size)
     }
     cairo_font_extents_t extents;
     cairo_scaled_font_extents(cairo_font, &extents);
-    scale = (double)size/extents.height;
+    scale = (double)size/upem;
 
     myfont = (Font *)malloc(sizeof(Font));
     myfont->hb_font = hb_font;
@@ -477,7 +481,7 @@ _create_font(const char *file, unsigned int idx, int size)
     myfont->cairo_font = cairo_font;
     myfont->size = size;
     myfont->scale = scale;
-    myfont->height = extents.height * scale;
+    myfont->height = extents.height;
 
     return myfont;
 }
@@ -642,6 +646,7 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
         ERR("utf8 length is 0");
         return NULL;
     }
+#if 0
     // Remove special characters
     for (int i = 0 ; i < utf8_len ; i++) {
         if (!(utf8[i] >> 31)) {
@@ -654,7 +659,7 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
     }
     utf8 = str;
     utf8_len = str_len;
-
+#endif
     hb_buffer = _create_hb_buffer(utf8, utf8_len, dir, script, lang, features, font->shapers, font->hb_font);
 
     // Convert from harfbuzz glyphs to cairo glyphs
@@ -690,8 +695,8 @@ _create_text(const char *utf8, const char *dir, const char *script, const char *
     unsigned int i = 0;
     for (i = 0; i < num_glyphs ; i++) {
         glyphs[i].index = hb_glyphs[i].codepoint;
-        glyphs[i].x =  (hb_glyph_poses[i].x_offset + x);
-        glyphs[i].y = -(hb_glyph_poses[i].y_offset + y);
+        glyphs[i].x =  (hb_glyph_poses[i].x_offset + x) * font->scale;
+        glyphs[i].y = -(hb_glyph_poses[i].y_offset + y) * font->scale;
         x += hb_glyph_poses[i].x_advance;
         y += hb_glyph_poses[i].y_advance;
     }
@@ -853,9 +858,6 @@ draw_cairo(cairo_t *cr, Font *font, int line_len, Text *l[], double line_space,
     cairo_save(cr);
 
     cairo_font_extents(cr, &font_extents);
-
-    scale = font->size/font_extents.height;
-    cairo_scale(cr, scale, scale);
 
     cairo_translate(cr, margin_left, margin_top);
 
@@ -1075,13 +1077,13 @@ char **_read_file(const char *file, int *line_len)
 int main(int argc, char *argv[])
 {
     // Use font-config
-    //const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
-    const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
+    const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
+    //const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
     //const char *font_file = "/usr/share/fonts/opentype/cantarell/Cantarell-Regular.otf"; // OpenType
     //const char *font_file = "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf"; // fixed witdh
     unsigned int font_idx = 0;
 
-    double font_size = 100;
+    double font_size = 50;
 
     char **line_txt;
     int line_len;
