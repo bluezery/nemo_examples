@@ -37,6 +37,8 @@
 #define LOG(...) LOGFMT(LOG_COLOR_GREEN, ##__VA_ARGS__)
 
 
+#define FREETYPE 0 // Use freetype backend instead of opentype
+
 typedef struct _File_Map
 {
     char *data;
@@ -108,6 +110,7 @@ _dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir
     if (font) {
         hb_codepoint_t code;
         hb_codepoint_t pcode = 0;
+        char name[256], str[256];
 
         // Harfbuzz codepoint
         if (type == HB_BUFFER_CONTENT_TYPE_UNICODE) { // before shaping, get codepoint from unicode
@@ -115,6 +118,9 @@ _dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir
         } else {  // itself already codepint.
             code = info.codepoint;
         }
+        hb_font_get_glyph_name(font, code, name, 255);
+        hb_font_glyph_to_string(font, code, str , 255); // Glyph ID
+        LOG("glyph_name:[%s] glyph_string:[%s]", name, str);
 
         // Origin
         hb_position_t org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y;
@@ -151,15 +157,8 @@ _dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir
             LOG("kerning CurrentDir[x:%d y:%d] [x:%d, y:%d]", x, y, xx, yy);
         }
         pcode = code;
-
 #if 0
-        // Glyph name, Almost all fonts does not support it?
-        const char *name = "Ampersand";
-        hb_codepoint_t cc;
-        hb_font_get_glyph_from_name(font, name, -1, &cc);
-        LOG("\t\tcode: %6X", cc);
-
-        LOG("\t\t============= contour =============");
+        LOG("============= contour =============");
         unsigned int idx = 0;
         hb_position_t cx, cy, cxx, cyy;
         while (hb_font_get_glyph_contour_point_for_origin(font, code, idx, dir, &cx, &cy)) {
@@ -167,10 +166,10 @@ _dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir
                 cxx = 0;
                 cyy = 0;
             }
-            LOG("[%2d] cx: %d(%d), cy: %d(%d)", idx, cx, cxx, cy, cyy);
+            LOG("\t[%2d] cx: %d(%d), cy: %d(%d)", idx, cx, cxx, cy, cyy);
             idx++;
         }
-        LOG("\n\t\t==================================");
+        LOG("===================================");
 #endif
     }
 }
@@ -178,6 +177,7 @@ _dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir
 static void
 _dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
 {
+    hb_face_t *face;
     unsigned int x_ppem, y_ppem;
     int x_scale, y_scale;
     unsigned int num_glyphs;
@@ -192,9 +192,12 @@ _dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
 
     hb_font_get_ppem(font, &x_ppem, &y_ppem);
     hb_font_get_scale(font, &x_scale, &y_scale);
+    face = hb_font_get_face(font);
     LOG("========================== Font info ===============================");
     LOG("\tx_ppem: %u, y_ppem: %u", x_ppem, y_ppem);
     LOG("\tx_scale: %d, y_scale: %d", x_scale, y_scale);
+    LOG("\tidx:%u upem:%u glyph_count:%u", hb_face_get_index(face), hb_face_get_upem(face),
+            hb_face_get_glyph_count(face));
     LOG("========================== Buffer info ===============================");
     LOG("\tcontent_type: %d [unicode = 1, glyphs] Length:%d", type, hb_buffer_get_length(buffer));
     LOG("\tdir: %d [LTR = 4, RTL, TTB, BTT]", dir);
@@ -384,9 +387,6 @@ _destroy_font(Font *myfont)
 static Font *
 _create_font(const char *file, unsigned int idx, int size)
 {
-    File_Map *fmap;
-
-    hb_blob_t *blob;
     hb_face_t *face;
     hb_font_t *hb_font;
     cairo_scaled_font_t *cairo_font;
@@ -401,12 +401,23 @@ _create_font(const char *file, unsigned int idx, int size)
         ERR("font file is NULL");
         return NULL;
     }
-
+#if FREETYPE
+    FT_Library ft_lib;
+    if (FT_Init_FreeType(&ft_lib) ||
+        FT_New_Face(ft_lib, file, 0, &ft_face)) {
+        ERR("FT Init FreeType or FT_New_Face failed");
+        FT_Done_Library(ft_lib);
+        return NULL;
+    }
+    face = hb_ft_face_create(ft_face, (hb_destroy_func_t)FT_Done_Face);
+#else
+    File_Map *fmap;
     fmap = create_file_map(file);
     if (!fmap->data || !fmap->len) {
         ERR("font data is NULL or length is zero");
         return NULL;
     }
+    hb_blob_t *blob;
 
     blob = hb_blob_create(fmap->data, fmap->len,
             HB_MEMORY_MODE_READONLY_MAY_MAKE_WRITABLE, fmap, (hb_destroy_func_t)destroy_file_map);
@@ -415,9 +426,9 @@ _create_font(const char *file, unsigned int idx, int size)
         destroy_file_map(fmap);
         return NULL;
     }
-
     face = hb_face_create (blob, idx);
     hb_blob_destroy(blob);
+#endif
     if (!face) {
         ERR("hb face create failed");
         return NULL;
@@ -440,8 +451,11 @@ _create_font(const char *file, unsigned int idx, int size)
     hb_font_set_scale(hb_font, upem, upem);
 
     // You can choose backend free type or open type (harfbuzz internal) or your custom
-    //hb_ft_font_set_funcs(hb_font);   // free type backend // FIXME: text width is weired
+#if FREETYPE
+    hb_ft_font_set_funcs(hb_font);   // free type backend // FIXME: text width is weired
+#else
     hb_ot_font_set_funcs(hb_font);   // open type backend
+#endif
 #if 0 // Custom backend
     hb_font_set_funcs(font2, func, NULL, NULL);
     static hb_font_funcs_t *font_funcs = NULL;
@@ -462,7 +476,7 @@ _create_font(const char *file, unsigned int idx, int size)
 
     // Create cairo drawing font
     cairo_font = create_cairo_scaled_font(ft_face, file,
-            (double)size * upem / ft_face->max_advance_height);
+           (double)size * upem/ ft_face->max_advance_height);
     if (!cairo_font) {
         ERR("create cairo scaled font failed");
         hb_font_destroy(hb_font);
@@ -1143,6 +1157,7 @@ int main(int argc, char *argv[])
     cairo_set_line_width(cr, 1);
     cairo_set_source_rgba(cr, 1, 0, 0, 1);
     cairo_stroke(cr);
+
 
 	closure_func func = cairo_surface_get_user_data (cairo_get_target (cr), &closure_key);
     if (func) func(cr, w, h);
