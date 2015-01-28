@@ -558,7 +558,7 @@ _text_cairo_del(Cairo_Text *ct)
 // if from or to is -1, the ignore range.
 static Cairo_Text *
 _text_cairo_new(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
-        int from, int to)
+        int from, int to, bool is_cluster)
 {
     unsigned int num_glyphs;
     hb_glyph_info_t *hb_glyphs;
@@ -566,9 +566,9 @@ _text_cairo_new(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf
     bool backward;
 
     cairo_glyph_t *glyphs;
-    unsigned int num_clusters;
-    cairo_text_cluster_t *clusters;
-    cairo_text_cluster_flags_t cluster_flags;
+    unsigned int num_clusters = 0;
+    cairo_text_cluster_t *clusters = NULL;
+    cairo_text_cluster_flags_t cluster_flags = 0;
     int i = 0;
     unsigned int j;
 
@@ -590,21 +590,8 @@ _text_cairo_new(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf
         to = num_glyphs - 1;
     }
 
-    num_clusters = 1;
-    for (i = from + 1 ; i < (to + 1); i++) {
-        if (hb_glyphs[i].cluster != hb_glyphs[i-1].cluster)
-            num_clusters++;
-    }
-
-    clusters = cairo_text_cluster_allocate(num_clusters);
-    if (!clusters) return NULL;
-    memset(clusters, 0, num_clusters * sizeof(clusters[0]));
-
     glyphs = cairo_glyph_allocate (num_glyphs + 1);
-    if (!glyphs) {
-        cairo_text_cluster_free(clusters);
-        return NULL;
-    }
+    if (!glyphs) return NULL;
 
     hb_position_t x = 0, y = 0;
     for (i = 0, j = from ; i < num_glyphs ; i++, j++) {
@@ -618,53 +605,70 @@ _text_cairo_new(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf
     glyphs[i].x = x * font->cairo_scale;
     glyphs[i].y = y * font->cairo_scale;
 
-    backward = HB_DIRECTION_IS_BACKWARD(hb_buffer_get_direction(hb_buffer));
-    cluster_flags =
-        backward ? CAIRO_TEXT_CLUSTER_FLAG_BACKWARD : (cairo_text_cluster_flags_t) 0;
+    // FIXME: If multiline is used, do not use cluster
+    // for some languages (hebrew or japanese, etc.),
+    // hb_buffer should be splitted for each line.
+    if (is_cluster) {
 
-    unsigned int cluster = 0;
-    const char *start = utf8;
-    const char *end;
-    clusters[cluster].num_glyphs++;
-
-    if (backward) {
-        // FIXME: backward tests!!!
-        ERR("backward is not tested yet!!");
-        abort();
-        for (i = num_glyphs - 2; i >= 0; i--) {
-            if (hb_glyphs[i].cluster != hb_glyphs[i+1].cluster) {
-                if (hb_glyphs[i].cluster >= hb_glyphs[i+1].cluster) {
-                    ERR("cluster index is not correct");
-                    cairo_glyph_free(glyphs);
-                    cairo_text_cluster_free(clusters);
-                    return NULL;
-                }
-                clusters[cluster].num_bytes = hb_glyphs[i].cluster - hb_glyphs[i+1].cluster;
-                end = start + clusters[cluster].num_bytes;
-                start = end;
-                cluster++;
-            }
-            clusters[cluster].num_glyphs++;
+        num_clusters = 1;
+        for (i = from + 1 ; i < (to + 1); i++) {
+            if (hb_glyphs[i].cluster != hb_glyphs[i-1].cluster)
+                num_clusters++;
         }
-        clusters[cluster].num_bytes = utf8 + utf8_len - start;
-    } else {
-        for (i = from + 1 ; i < (to + 1) ; i++) {
-            if (hb_glyphs[i].cluster != hb_glyphs[i-1].cluster) {
-                if (hb_glyphs[i].cluster <= hb_glyphs[i-1].cluster) {
-                    ERR("cluster index is not correct");
-                    cairo_glyph_free(glyphs);
-                    cairo_text_cluster_free(clusters);
-                    return NULL;
-                }
 
-                clusters[cluster].num_bytes = hb_glyphs[i].cluster - hb_glyphs[i-1].cluster;
-                end = start + clusters[cluster].num_bytes;
-                start = end;
-                cluster++;
-            }
-            clusters[cluster].num_glyphs++;
+        clusters = cairo_text_cluster_allocate(num_clusters);
+        if (!clusters) {
+            cairo_glyph_free(glyphs);
+            return NULL;
         }
-        clusters[cluster].num_bytes = utf8 + utf8_len - start;
+        memset(clusters, 0, num_clusters * sizeof(clusters[0]));
+
+        backward = HB_DIRECTION_IS_BACKWARD(hb_buffer_get_direction(hb_buffer));
+        cluster_flags =
+            backward ? CAIRO_TEXT_CLUSTER_FLAG_BACKWARD : (cairo_text_cluster_flags_t) 0;
+
+        unsigned int cluster = 0;
+        const char *start = utf8;
+        const char *end;
+        clusters[cluster].num_glyphs++;
+
+        if (backward) {
+            // FIXME: backward tests!!!
+            ERR("backward is not tested yet!!");
+            abort();
+            for (i = num_glyphs - 2; i >= 0; i--) {
+                if (hb_glyphs[i].cluster != hb_glyphs[i+1].cluster) {
+                    if (hb_glyphs[i].cluster >= hb_glyphs[i+1].cluster) {
+                        ERR("cluster index is not correct");
+                        cairo_glyph_free(glyphs);
+                        cairo_text_cluster_free(clusters);
+                        return NULL;
+                    }
+                    start = end;
+                    cluster++;
+                }
+                clusters[cluster].num_glyphs++;
+            }
+            clusters[cluster].num_bytes = utf8 + utf8_len - start;
+        } else {
+            for (i = from + 1 ; i < (to + 1) ; i++) {
+                if (hb_glyphs[i].cluster != hb_glyphs[i-1].cluster) {
+                    if (hb_glyphs[i].cluster <= hb_glyphs[i-1].cluster) {
+                        ERR("cluster index is not correct");
+                        cairo_glyph_free(glyphs);
+                        cairo_text_cluster_free(clusters);
+                        return NULL;
+                    }
+
+                    clusters[cluster].num_bytes = hb_glyphs[i].cluster - hb_glyphs[i-1].cluster;
+                    end = start + clusters[cluster].num_bytes;
+                    start = end;
+                    cluster++;
+                }
+                clusters[cluster].num_glyphs++;
+            }
+            clusters[cluster].num_bytes = utf8 + utf8_len - start;
+        }
     }
 
     Cairo_Text *ct = (Cairo_Text *)calloc(sizeof(Cairo_Text), 1);
@@ -860,8 +864,8 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
     *_str_len = str_len;
 }
 
-// You can restrict number of line, width.
-// if it is below or equal to 0, there is no restriction)
+// You can restrict width and maximum number of line and set ellipsis.
+// if width or line is below or equal to 0, it's useless)
 static Text *
 _text_new(Font *font, const char *utf8,
         const char *dir, const char *script, const char *lang, const char *features,
@@ -940,7 +944,6 @@ _text_new(Font *font, const char *utf8,
     if (tw < width) width = tw;
 
     line_num = ln;
-
     if (ellipsis && (i < num_glyphs)) { // ellipsis is needed
         // If width is too small for ellipsis glyph, change last glyph as ellipsis.
         if ((lw - glyph_w + font->max_width) > width)  i--;
@@ -950,7 +953,6 @@ _text_new(Font *font, const char *utf8,
         hb_buffer = _text_hb_new(hb_buffer, str, str_len,
                 dir, script, lang, features, font->shapers, font->hb_font);
         num_glyphs = hb_buffer_get_length(hb_buffer);
-        LOG("%s %d %d", str, str_len, num_glyphs);
     }
 
     cairo_texts = (Cairo_Text **)malloc(sizeof(Cairo_Text *) * line_num);
@@ -958,12 +960,12 @@ _text_new(Font *font, const char *utf8,
     if ((line_num == 1) && (i <= num_glyphs)) {// if exact single line
         // FIXME: This should be here because  _text_hb_get_idx_within_width()
         // function cannot solve double precison for width.
-        cairo_texts[0] = _text_cairo_new(font, hb_buffer, str, str_len, 0, i);
+        cairo_texts[0] = _text_cairo_new(font, hb_buffer, str, str_len, 0, i, true);
     } else {
         unsigned int from = 0, to;
         for (unsigned int i = 0 ; i < line_num ; i++) {
             to = _text_hb_get_idx_within_width(hb_buffer, from, width, font->cairo_scale);
-            cairo_texts[i] = _text_cairo_new(font, hb_buffer, str, str_len, from, to);
+            cairo_texts[i] = _text_cairo_new(font, hb_buffer, str, str_len, from, to, false);
             from = to + 1;
         }
     }
@@ -1209,7 +1211,6 @@ void render_evas(cairo_t *cr, int w, int h)
     Ecore_Evas *ee;
     Evas_Object *img;
 
-    LOG("");
     RET_IF(!ecore_evas_init())
 
     cairo_surface_t *surface = cairo_get_target(cr);
@@ -1250,7 +1251,6 @@ _cairo_img_surface_create(render_loop render_func,
     cairo_status_t status = cairo_surface_status(surface);
     if (status != CAIRO_STATUS_SUCCESS) ERR("error:%s", cairo_status_to_string(status));
 
-    LOG("%p", key);
     if (cairo_surface_set_user_data(surface,
                 key,
                 render_func,
@@ -1529,7 +1529,7 @@ int main(int argc, char *argv[])
     // Create Text
     text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
-        text[i] = _text_new(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 0, 2, false);
+        text[i] = _text_new(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 300, 3, true);
         //_create_text2(line_txt[i], NULL, NULL, NULL, NULL, font);
         free(line_txt[i]);
     }
@@ -1551,7 +1551,7 @@ int main(int argc, char *argv[])
     // create cairo context
     cr = _create_cairo(surface);
 
-    // Draw all texts
+    // Draw multiple texts
     cairo_save(cr);
     cairo_translate(cr, margin_left, margin_top);
     for (int i = 0 ; i < line_len ; i++) {
@@ -1568,7 +1568,6 @@ int main(int argc, char *argv[])
         cairo_save(cr);
         double ww = text[i]->width;
         double hh = text[i]->height;
-        LOG("[%d] %lf %lf", i, ww, hh);
         cairo_rectangle(cr, 0, 0, ww, hh);
         cairo_set_line_width(cr, 1);
         cairo_set_source_rgba(cr, 1, 0, 0, 1);
