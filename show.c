@@ -892,22 +892,23 @@ _text_new(Font *font, const char *utf8,
         return NULL;
     }
 
-#if 0 // FIXME: Valgrind bugs
+    str = (char *)malloc(sizeof(char) * utf8_len);
+#if 1
     // Remove special characters (e.g. line feed, backspace, etc.)
     for (unsigned int i = 0 ; i < utf8_len ; i++) {
         if (utf8[i] >> 31 ||
-            (utf8[i] > 0x1F)) {
-            str = (char *)realloc(str, sizeof(char) * (str_len + 1));
+            (utf8[i] > 0x1F)) { // If it is valid character
             str[str_len] = utf8[i];
             str_len++;
         }
     }
     if (!str || str_len <=0 ) return NULL;
-    LOG("%s: %d", str, str_len);
+    str = (char *)realloc(str, sizeof(char) * (str_len + 1));
     str[str_len] = '\0';
-#endif
+#else
     str = strdup(utf8);
     str_len = utf8_len;
+#endif
 
     hb_buffer = _text_hb_new(NULL, str, str_len, dir, script, lang, features, font->shapers, font->hb_font);
     num_glyphs = hb_buffer_get_length(hb_buffer);
@@ -1486,8 +1487,8 @@ _draw_glyph(Glyph *glyph, cairo_t *cr)
 int main(int argc, char *argv[])
 {
     // Use font-config
-    const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
-    //const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
+    //const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
+    const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
     //const char *font_file = "/usr/share/fonts/opentype/cantarell/Cantarell-Regular.otf"; // OpenType
     //const char *font_file = "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf"; // fixed witdh
     unsigned int font_idx = 0;
