@@ -92,6 +92,10 @@ typedef struct _Text
     Cairo_Text **cairo_texts;
 } Text;
 
+
+FT_Library _ft_lib;
+
+
 static void
 _file_map_del(File_Map *fmap)
 {
@@ -140,8 +144,6 @@ _file_map_new(const char *file)
     fmap->len = len;
     return fmap;
 }
-
-FT_Library _ft_lib;
 
 static bool
 _font_init()
@@ -840,6 +842,7 @@ _text_cairo_draw(cairo_t *cr, Font *font, Text *text)
 
 
 
+#if 0
 #include <iconv.h>
 
 static Text *
@@ -965,7 +968,7 @@ _draw_glyph(Glyph *glyph, cairo_t *cr)
 	}
 	cairo_stroke(cr);
 }
-
+#endif
 
 
 #endif

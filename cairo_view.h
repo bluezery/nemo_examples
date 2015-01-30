@@ -18,7 +18,7 @@
 
 #include "log.h"
 
-typedef void (*Render_Func)(cairo_t *cr, int w_in_pt, int h_in_pt);
+typedef void (*_Cairo_Render)(cairo_t *cr, int w_in_pt, int h_in_pt);
 
 static void
 _cairo_render_evas(cairo_t *cr, int w, int h)
@@ -33,6 +33,7 @@ _cairo_render_evas(cairo_t *cr, int w, int h)
     unsigned char *data = cairo_image_surface_get_data(surface);
 
     ee = ecore_evas_new(NULL, 0, 0, w, h, NULL);
+    ERR("Window size: %d %d", w, h);
     ecore_evas_show(ee);
 
     img = evas_object_image_filled_add(ecore_evas_get(ee));
@@ -81,13 +82,17 @@ _cairo_render_png(cairo_t *cr, int w __UNUSED__, int h __UNUSED__)
 }
 
 static cairo_surface_t *
-_cairo_img_surface_create(Render_Func func, void *key, int w, int h)
+_cairo_img_surface_create(_Cairo_Render func, void *key, int w, int h)
 {
     RET_IF(!func || !key, NULL);
     cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, w, h);
-    cairo_status_t status = cairo_surface_status(surface);\
+    cairo_status_t status = cairo_surface_status(surface);
 
-    if (status != CAIRO_STATUS_SUCCESS) ERR("error:%s", cairo_status_to_string(status));
+    if (!surface || status != CAIRO_STATUS_SUCCESS) {
+        ERR("error:%s", cairo_status_to_string(status));
+        if (surface) cairo_surface_destroy(surface);
+        return NULL;
+    }
     if (cairo_surface_set_user_data(surface, key, func, NULL))
         ERR("set user data failure");
 
@@ -101,7 +106,6 @@ _cairo_surface_create(int type, int w, int h, void *closure_key)
 
     switch(type)
     {
-        default:
         case 0:
             surface = _cairo_img_surface_create
                 (_cairo_render_evas, closure_key, w, h);
@@ -143,6 +147,7 @@ _cairo_create(cairo_surface_t *surface)
 
     switch (content) {
         case CAIRO_CONTENT_ALPHA:
+            LOG("alpha");
             cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
             cairo_set_source_rgba(cr, 1., 1., 1., br / 255.);
             cairo_paint(cr);
@@ -150,8 +155,11 @@ _cairo_create(cairo_surface_t *surface)
                     (fr / 255.) * (fa / 255.) + (br / 255) * (1 - (fa / 255.)));
             break;
         default:
+            LOG("default");
         case CAIRO_CONTENT_COLOR:
+            LOG("color");
         case CAIRO_CONTENT_COLOR_ALPHA:
+            LOG("color alpha");
             cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
             cairo_set_source_rgba(cr, br / 255., bg / 255., bb / 255., ba / 255.);
             cairo_paint(cr);
