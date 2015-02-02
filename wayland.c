@@ -3,9 +3,9 @@
 #include <cairo.h>
 //#include <xkbcommon/xkbcommon.h>
 
-#include <stdlib.h>
+#include <stdlib.h>  // free, calloc, mkostemp, malloc, getenv
 #include <errno.h>
-#include <string.h>
+#include <string.h>   // strerror
 #include <unistd.h> // close, unlink
 #include <sys/mman.h>  // mmap
 #include <fcntl.h>      // posix_fallocate
@@ -361,7 +361,6 @@ int main()
     stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
 
     window = _window_create(w, h, stride);
-
     // Drawing
     cairo_t *cr;
     cairo_surface_t *cairo_surface;
@@ -378,11 +377,8 @@ int main()
     cairo_rectangle(cr, 10, 10, 100, 100);
     cairo_fill(cr);
 
-    /*
     unsigned char *map = cairo_image_surface_get_data(cairo_surface);
     memcpy(window->main_map, map, h * stride);
-    */
-
 
 
 #if 0
