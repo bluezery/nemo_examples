@@ -1,50 +1,9 @@
 // errno type
 #include <errno.h>
 
-#include <wayland-client.h>
-
 #include "text.h"
 #include "cairo_view.h"
 #include "log.h"
-
-#if 0
-typedef struct _display {
-    struct wl_display *wl_disp;
-    struct wl_compositor *wl_comp;
-} display;
-
-static void _wl_log(const char *format, va_list args)
-{
-    fprintf(stderr, format, args);
-}
-
-/*
-static void
-xdg_shell_ping(void *data, struct xdg_shell *shell, uint32_t serial)
-{
-    wl_proxy_marshal((struct wl_proxy *)xdg_shell, 3, serial);
-}
-
-static const struct xdg_shell_listener xdg_shell_listener = {
-	xdg_shell_ping,
-};
-*/
-
-static struct wl_compositor *comp;
-    static void
-reg_handle_global(void *data, struct wl_registry *reg, uint32_t id, const char *interface, uint32_t version)
-{
-    display *disp = data;
-    if (strcmp(interface, "wl_compositor") == 0) {
-        LOG("Compositor");
-        disp->wl_comp = wl_registry_bind(reg, id, &wl_compositor_interface, 3);
-    } else if (strcmp(interface, "xdg_shell") == 0) {
-        LOG("XDG");
-    } else {
-        LOG("id:%d interface:%s version:%d", id, interface, version);
-    }
-}
-#endif
 
 #ifdef DEBUG
 static void
@@ -378,14 +337,10 @@ int main(int argc, char *argv[])
     // create cairo surface create
     w = 600;
     h = 600;
-#if 1
     cairo_user_data_key_t key;
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);
     surf = _cairo_surface_create(param, w, h, &key);
-#else
-    surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-#endif
 
     // create cairo context
     cr = _cairo_create(surf);
@@ -422,51 +377,9 @@ int main(int argc, char *argv[])
     }
     cairo_restore(cr);
 
-#if 1
 	_Cairo_Render func = cairo_surface_get_user_data (surf, &key);
 	RET_IF(!func, -1);
 	if (func) func(cr, w, h);
-#else
-    wl_log_set_handler_client(_wl_log);
-
-    display *disp = (display *)malloc(sizeof(display));
-
-    // Connect display
-    disp->wl_disp = wl_display_connect(NULL);
-    if (!disp->wl_disp) {
-        ERR("wl display failed:%s ", strerror(errno));
-        return -1;
-    }
-
-    // Get registry, do roundtrip
-    static const struct wl_registry_listener _reg_listner = {
-        reg_handle_global,
-        NULL
-    };
-    struct wl_registry *reg = wl_display_get_registry(disp->wl_disp);
-    wl_registry_add_listener(reg, &_reg_listner, disp);
-
-	if (wl_display_roundtrip(disp->wl_disp) < 0) {
-	    ERR("wl display roundtrip failed: %s", strerror(errno));
-	    return -1;
-	}
-
-    // Create Window
-	struct wl_surface *wl_surf = wl_compositor_create_surface(disp->wl_comp);
-	//wl_surface_set_user_data(surface, window);
-
-
-    while (1) {
-        int ret;
-        wl_display_dispatch_pending(disp->wl_disp);
-        ret = wl_display_flush(disp->wl_disp);
-        if (ret < 0 && errno == EAGAIN) {
-            ERR("%s", strerror(errno));
-        } else if (ret < 0) {
-            break;
-        }
-    }
-#endif
 
     cairo_surface_destroy(surf);
     cairo_destroy(cr);
