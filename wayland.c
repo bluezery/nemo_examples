@@ -1,19 +1,16 @@
 #define _GNU_SOURCE
 #include <wayland-client.h>
-#include <xkbcommon/xkbcommon.h>
 #include <cairo.h>
+//#include <xkbcommon/xkbcommon.h>
 
-#include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include "log.h"
-
 #include <unistd.h> // close, unlink
-
 #include <sys/mman.h>  // mmap
 #include <fcntl.h>      // posix_fallocate
 
+#include "log.h"
 
 typedef struct _Window {
     struct wl_display *display;
@@ -368,8 +365,10 @@ int main()
     // Drawing
     cairo_t *cr;
     cairo_surface_t *cairo_surface;
+    cairo_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    /*
     cairo_surface = cairo_image_surface_create_for_data(window->main_map,
-            CAIRO_FORMAT_ARGB32, w, h, stride);
+            CAIRO_FORMAT_ARGB32, w, h, stride);*/
     cr = cairo_create(cairo_surface);
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, 0., 0., 0., 1.);
@@ -378,6 +377,12 @@ int main()
     cairo_set_source_rgba(cr, 0., 1., 1., 1.);
     cairo_rectangle(cr, 10, 10, 100, 100);
     cairo_fill(cr);
+
+    /*
+    unsigned char *map = cairo_image_surface_get_data(cairo_surface);
+    memcpy(window->main_map, map, h * stride);
+    */
+
 
 
 #if 0
