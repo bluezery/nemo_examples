@@ -1,8 +1,8 @@
 // errno type
+#include "cairo_view.h"
 #include <errno.h>
 
 #include "text.h"
-#include "cairo_view.h"
 #include "log.h"
 
 #ifdef DEBUG

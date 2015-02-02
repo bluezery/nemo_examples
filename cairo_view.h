@@ -1,27 +1,26 @@
 #ifndef __CAIRO_VIEW_H__
 #define __CAIRO_VIEW_H__
 
-// fwrite
-#include <stdio.h>
+#define _GNU_SOURCE
+#include <stdio.h> // fwrite
 
-// errno type
-#include <errno.h>
+#include <errno.h> // errno
 
 #include <cairo.h>
 #include <cairo-svg.h>
 #include <cairo-pdf.h>
 #include <cairo-ps.h>
 
+#include "log.h"
+
+typedef void (*_Cairo_Render)(cairo_t *cr, int w_in_pt, int h_in_pt);
+#if 0
 #include <Ecore.h>
 #include <Evas.h>
 #include <Ecore_Evas.h>
 
-#include "log.h"
-
-typedef void (*_Cairo_Render)(cairo_t *cr, int w_in_pt, int h_in_pt);
-
 static void
-_cairo_render_evas(cairo_t *cr, int w, int h)
+_cairo_render(cairo_t *cr, int w, int h)
 {
     Ecore_Evas *ee;
     Evas_Object *img;
@@ -49,6 +48,25 @@ _cairo_render_evas(cairo_t *cr, int w, int h)
     ecore_evas_free(ee);
     ecore_evas_shutdown();
 }
+#else
+
+#include "cairo_wayland.h"
+static void
+_cairo_render(cairo_t *cr, int w, int h)
+{
+    Window *window;
+    int stride;
+    stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w);
+    cairo_surface_t *surface = cairo_get_target(cr);
+
+    unsigned char *data = cairo_image_surface_get_data(surface);
+
+    window = _window_create(w, h, stride);
+    _window_set_buffer(window, data, h * stride);
+    _window_loop(window);
+}
+
+#endif
 
 static cairo_status_t
 _cairo_stdio_write (void *closure, const unsigned char *data, unsigned int size)
@@ -108,7 +126,7 @@ _cairo_surface_create(int type, int w, int h, void *closure_key)
     {
         case 0:
             surface = _cairo_img_surface_create
-                (_cairo_render_evas, closure_key, w, h);
+                (_cairo_render, closure_key, w, h);
             break;
         case 1:
             surface = _cairo_img_surface_create

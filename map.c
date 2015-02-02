@@ -1,3 +1,4 @@
+#include "cairo_view.h"
 #include <stdio.h> // snprintf
 #include <string.h> // stdup
 #include <math.h>   // PI
@@ -5,7 +6,6 @@
 
 #include <curl/curl.h>
 
-#include "cairo_view.h"
 #include "log.h"
 
 #include "pixmanhelper.h"
