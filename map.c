@@ -9,7 +9,7 @@
 
 #include "log.h"
 #include "util.h"
-
+#include "nemolist.h"
 #include "pixmanhelper.h"
 
 #if 0
@@ -147,14 +147,16 @@ _file_download_cleanup()
     curl_global_cleanup();
 }
 
-typedef struct _File_Downloader {
+typedef struct _FileDownloader {
+    struct nemolist link;
     CURL *curl;
     char *url;
-    char *file_name;
+    char *filename;
+    int ux, uy;
 
-} File_Downloader;
+} FileDownloader;
 
-static File_Downloader *
+static FileDownloader *
 _file_download_create(const char *src, const char *dst, unsigned int timeout)
 {
     RET_IF(!src, false);
@@ -165,6 +167,13 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
     CURLcode ret;
     CURL *easy;
 
+    if (_file_exist(dst)) {
+        LOG("file already downloaded: %s", dst);
+        FileDownloader *fd = malloc(sizeof(FileDownloader));
+        fd->url = strdup(src);
+        fd->filename = strdup(dst);
+        return fd;
+    }
     fp = fopen(dst, "w+");
     if (!fp) {
         ERR("%s", strerror(errno));
@@ -200,10 +209,10 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
         curl_easy_cleanup(easy);
         return NULL;
     }
-    File_Downloader *fd = malloc(sizeof(File_Downloader));
+    FileDownloader *fd = malloc(sizeof(FileDownloader));
     fd->curl = easy;
     fd->url = strdup(src);
-    fd->file_name = strdup(dst);
+    fd->filename = strdup(dst);
     return fd;
 }
 
@@ -227,6 +236,9 @@ _file_download_do()
         } else {
             twait.tv_usec = 100000; // minimum: 100 milliseconds.
         }
+
+
+
 
         int max_fd;
         fd_set fd_read;
@@ -291,6 +303,54 @@ typedef struct _TileItem
 
 static int tileitem_size = 255;
 
+typedef struct _Image
+{
+   char *path;
+   pixman_image_t *pimg;
+   cairo_surface_t *surface;
+   unsigned int width;
+   unsigned int height;
+   cairo_format_t format;
+   unsigned int stride;
+} Image;
+
+static Image *
+_image_create(const char *path)
+{
+   RET_IF(!path, NULL);
+   int pw, ph;
+
+   // FIXME: file type recognization
+   pixman_image_t *pimg = pixman_load_jpeg_file(path);
+
+   pw = pixman_image_get_width(pimg);
+   ph = pixman_image_get_height(pimg);
+   unsigned char *data = (unsigned char *)pixman_image_get_data(pimg);
+
+   cairo_format_t format = CAIRO_FORMAT_ARGB32;
+   int stride = cairo_format_stride_for_width (format, pw);
+   cairo_surface_t *surface = cairo_image_surface_create_for_data(data, format, pw, ph, stride);
+
+   Image *img = calloc(sizeof(Image), 1);
+   img->path = strdup(path);
+   img->pimg = pimg;
+   img->format = format;
+   img->stride = stride;
+   img->surface = surface;
+   return img;
+}
+
+static void
+_image_destroy(Image *img)
+{
+   RET_IF(!img);
+   free(img->path);
+   cairo_surface_destroy(img->surface);
+   pixman_image_unref(img->pimg);
+   free(img);
+}
+
+
 static void
 _map_tilecoord_to_region(unsigned int zoom,
                          int x, int y,
@@ -330,6 +390,14 @@ int main()
 
     int w = 600, h = 600;
 
+    const char *home = getenv("HOME");
+    char *path;
+    if (home) path = _strdup_printf("%s/.map", home);
+    else      path = _strdup_printf("/tmp/.map");
+    if (!_file_mkdir(path, 0755)) {
+        ERR("file mkdir failed: %s", path);
+        return -1;
+    }
     _file_download_init();
 
     double zoom = 16;
@@ -346,10 +414,7 @@ int main()
     RET_IF(!surf, -1);
     cr = _cairo_create(surf, 255, 255, 255, 255);
     RET_IF(!surf, -1);
-
-    cairo_rectangle(cr, 10, 10, 100, 100);
-    cairo_stroke(cr);
-
+    LOG("%s", path);
     // Tile Index
     int tix, tiy;
     tix = tx/tileitem_size;
@@ -369,7 +434,9 @@ int main()
         if (ux < 0) break;
     }
 
-    LOG("tix:%d ux:%d", tix, ux);
+    // Create download list
+    struct nemolist downloads;
+    nemolist_init(&downloads);
     for ( ; (ux < w) && (tix <= (pow(2, zoom) - 1)) ; ux += tileitem_size, tix++) {
         tiy = ty/tileitem_size;
         uy = (h - tileitem_size)/2;
@@ -382,41 +449,40 @@ int main()
             uy -= tileitem_size;
             if (uy < 0) break;
         }
-        LOG("tiy:%d uy:%d", tiy, uy);
         for ( ; (uy < h) && (tiy <= pow(2, zoom - 1)) ; uy += tileitem_size, tiy++) {
             char *url = _map_url_get_mapquest(zoom, tix, tiy);
             LOG("%s", url);
-            char *file = _strdup_printf("%0.2lf.%d.%d.jpg", zoom, tix, tiy);
+            char *file = _strdup_printf("%s/%0.2lf.%d.%d.jpg", path, zoom, tix, tiy);
 
-            _file_download_create(url, file, 0);
-            _file_download_do();
-
-            pixman_image_t *pimg = pixman_load_jpeg_file(file);
-
-            int pw, ph;
-            pw = pixman_image_get_width(pimg);
-            ph = pixman_image_get_height(pimg);
-            unsigned char *data = (unsigned char *)pixman_image_get_data(pimg);
-
-            cairo_format_t format = CAIRO_FORMAT_ARGB32;
-            int stride = cairo_format_stride_for_width (format, pw);
-            cairo_surface_t *img = cairo_image_surface_create_for_data(data, format, pw, ph, stride);
-
-            double ww, hh;
-            ww = cairo_image_surface_get_width(img);
-            hh = cairo_image_surface_get_height(img);
-
-            cairo_set_source_surface(cr, img, ux, uy);
-            cairo_paint(cr);
+            FileDownloader *fd = _file_download_create(url, file, 0);
+            free(file);
+            free(url);
+            fd->ux = ux;
+            fd->uy = uy;
+            nemolist_insert(&downloads, &fd->link);
         }
+    }
+
+    //  Download do
+    _file_download_do();
+
+    // Load downloaded files
+    FileDownloader *fd;
+    nemolist_for_each(fd, &downloads, link) {
+         Image *img = _image_create(fd->filename);
+         cairo_set_source_surface(cr, img->surface, fd->ux, fd->uy);
+         cairo_paint(cr);
     }
 
     _Cairo_Render func = cairo_surface_get_user_data (surf, &key);
     RET_IF(!func, -1);
     if (func) func(cr, w, h);
 
-
     cairo_surface_destroy(surf);
     cairo_destroy(cr);
+
+    _file_download_cleanup();
+    free(path);
+
     return 0;
 }

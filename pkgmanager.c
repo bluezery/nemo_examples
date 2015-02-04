@@ -35,7 +35,7 @@ _opkg_update()
             ERR("%s is not a directory", opkg_config->lists_dir);
             return false;
         } else {
-            if (!_file_mkdir(opkg_config->lists_dir, 0755)) {
+            if (!_file_mkdir_recursive(opkg_config->lists_dir, 0755)) {
                 ERR("file mkdir hier failed: %s", opkg_config->lists_dir);
                 return  false;
             }

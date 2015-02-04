@@ -40,7 +40,7 @@ _file_is_dir(const char *file)
     struct stat st;
     int r = stat(file, &st);
     if (r) {
-        ERR("%s", strerror(errno));
+        LOG("%s:%s", strerror(errno), file);
         return false;
     }
     return S_ISDIR(st.st_mode);
@@ -56,7 +56,46 @@ _file_exist(const char *file)
 }
 
 static bool
-_file_mkdir(const char *file, int mode)
+_file_mkdir(const char *dir, int mode)
+{
+    RET_IF(!dir, false);
+    bool ret;
+    char *parent;
+
+    if (_file_is_dir(dir)) {
+        LOG("already exists: %s", dir);
+        return true;
+    }
+
+    char *path = strdup(dir);
+    parent = dirname(path);
+    if (parent && strcmp(parent, ".") && strcmp(parent, "/")) {
+        ret = _file_mkdir(parent, mode | 0300);
+        if (!ret) {
+            free(path);
+            return false;
+        }
+    }
+    free(path);
+
+    ret = mkdir(dir, 0777);
+    if (ret) {
+        ERR("mkdir failed (%s): %s", dir, strerror(errno));
+        return false;
+    }
+
+    if (mode != -1) {
+        ret = chmod(dir, mode);
+        if (ret) {
+            ERR("chmod failed: %s: %s(%d)", strerror(errno), dir, mode);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
+_file_mkdir_recursive(const char *file, int mode)
 {
     RET_IF(!file, false);
     struct stat st;
@@ -78,7 +117,7 @@ _file_mkdir(const char *file, int mode)
             free(path);
             return true;
         }
-        ret = _file_mkdir(parent, mode | 0300);
+        ret = _file_mkdir_recursive(parent, mode | 0300);
 
         if (!ret) {
             free(path);
