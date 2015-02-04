@@ -343,7 +343,7 @@ int main(int argc, char *argv[])
     surf = _cairo_surface_create(param, w, h, &key);
 
     // create cairo context
-    cr = _cairo_create(surf);
+    cr = _cairo_create(surf, 255, 255, 255, 255);
 
     // Draw multiple texts
     cairo_save(cr);

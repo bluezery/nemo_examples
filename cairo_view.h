@@ -154,10 +154,9 @@ _cairo_surface_create(int type, int w, int h, void *closure_key)
 }
 
 cairo_t *
-_cairo_create(cairo_surface_t *surface)
+_cairo_create(cairo_surface_t *surface, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba)
 {
-    unsigned int fr, fg, fb, fa, br, bg, bb, ba;
-    br = bg = bb = ba = 255;
+    unsigned int fr, fg, fb, fa;
     fr = fg = fb = 0; fa = 255;
 
     cairo_t *cr = cairo_create(surface);
@@ -165,7 +164,7 @@ _cairo_create(cairo_surface_t *surface)
 
     switch (content) {
         case CAIRO_CONTENT_ALPHA:
-            LOG("alpha");
+            LOG("Alaph Content");
             cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
             cairo_set_source_rgba(cr, 1., 1., 1., br / 255.);
             cairo_paint(cr);
@@ -173,16 +172,16 @@ _cairo_create(cairo_surface_t *surface)
                     (fr / 255.) * (fa / 255.) + (br / 255) * (1 - (fa / 255.)));
             break;
         default:
-            LOG("default");
+            LOG("Default Content");
         case CAIRO_CONTENT_COLOR:
-            LOG("color");
+            LOG("Color Content");
         case CAIRO_CONTENT_COLOR_ALPHA:
-            LOG("color alpha");
+            LOG("Color Alaph Content");
             cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
             cairo_set_source_rgba(cr, br / 255., bg / 255., bb / 255., ba / 255.);
             cairo_paint(cr);
             cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-            cairo_set_source_rgba(cr, fr / 255., fg / 255., fb / 255., fa / 255.);
+            cairo_set_source_rgba(cr, 0, 0, 0, 1);
             break;
     }
 
