@@ -1,12 +1,14 @@
 #include "cairo_view.h"
 #include <stdio.h> // snprintf
-#include <string.h> // stdup
+#include <string.h> // strdup
 #include <math.h>   // PI
 #include <unistd.h> // write, usleep
 
 #include <curl/curl.h>
+#include <stdbool.h>
 
 #include "log.h"
+#include "util.h"
 
 #include "pixmanhelper.h"
 
@@ -85,7 +87,7 @@ _map_url_get_mapquest_aerial(int x, int y, int zoom)
 }
 #endif
 static char *
-_map_url_get_mapquest(int x, int y, int zoom)
+_map_url_get_mapquest(unsigned int zoom, unsigned int x, unsigned int y)
 {
    char buf[PATH_MAX];
    snprintf(buf, sizeof(buf),
@@ -94,7 +96,6 @@ _map_url_get_mapquest(int x, int y, int zoom)
    return strdup(buf);
 }
 
-CURLM *curlm;
 
 static size_t
 _curl_write_func(void *data, size_t item_size, size_t num_items, void *userdata)
@@ -121,52 +122,95 @@ _curl_write_func(void *data, size_t item_size, size_t num_items, void *userdata)
     return offset;
 }
 
-int main()
+
+CURLM *curlm;
+
+static bool
+_file_download_init()
 {
-    cairo_surface_t *surf;
-    cairo_t *cr;
-    cairo_user_data_key_t key;
-    double w, h;
-
-    char *url = _map_url_get_mapquest(0, 0, 2);
-    LOG("%s", url);
-    const char *file = "./test.jpg";
-
-    FILE *fp = NULL;
-    fp = fopen(file, "w+");
-    if (!fp) {
-        ERR("%s", strerror(errno));
-        curl_multi_cleanup(curlm);
-        curl_global_cleanup();
-        return -1;
+    CURLcode ret;
+    ret = curl_global_init(CURL_GLOBAL_ALL);
+    if (ret) {
+        ERR("curl global init failed: %s", curl_easy_strerror(ret));
+        return false;
     }
 
+    curlm = curl_multi_init();
+    if (!curlm) return false;
+    return true;
+}
+
+static void
+_file_download_cleanup()
+{
+    if (curlm) curl_multi_cleanup(curlm);
+    curl_global_cleanup();
+}
+
+typedef struct _File_Downloader {
+    CURL *curl;
+    char *url;
+    char *file_name;
+
+} File_Downloader;
+
+static File_Downloader *
+_file_download_create(const char *src, const char *dst, unsigned int timeout)
+{
+    RET_IF(!src, false);
+    RET_IF(!dst, false);
+
+    FILE *fp;
     CURLMcode retm;
     CURLcode ret;
-    if (curl_global_init(CURL_GLOBAL_ALL)) {
-        ERR("curl global init failed");
-        return -1;
-    }
-    curlm = curl_multi_init();
+    CURL *easy;
 
-    CURL *curl = curl_easy_init();
-    // ret = curl_easy_setopt(curl, CURLOPT_VERBOSE, 1); // debugging
-    ret = curl_easy_setopt(curl, CURLOPT_URL, url);
-    ret = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _curl_write_func);
-    ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-    //ret = curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, _curl_progress_func);
-    ret = curl_easy_setopt(curl, CURLOPT_PROGRESSDATA, NULL);
-    //ret = curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, _curl_header_func);
-    ret = curl_easy_setopt(curl, CURLOPT_HEADERDATA, NULL);
-    ret = curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3);
-    ret = curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1);
-
-    retm = curl_multi_add_handle(curlm, curl);
-    if (retm != CURLM_OK) {
-        ERR("curl multi add handle failed: %s", curl_multi_strerror(retm))
+    fp = fopen(dst, "w+");
+    if (!fp) {
+        ERR("%s", strerror(errno));
+        return NULL;
     }
 
-    LOG("%s", url);
+    easy = curl_easy_init();
+    if (!easy) {
+        return NULL;
+    }
+    // if (ret = curl_easy_setopt(easy, CURLOPT_VERBOSE, 1)) // debugging
+    //    ERR("%s", curl_easy_strerror(ret));
+    ret = curl_easy_setopt(easy, CURLOPT_URL, src);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    ret = curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, _curl_write_func);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    ret = curl_easy_setopt(easy, CURLOPT_WRITEDATA, fp);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    //ret = curl_easy_setopt(easy, CURLOPT_PROGRESSFUNCTION, _curl_progress_func);
+    ret = curl_easy_setopt(easy, CURLOPT_PROGRESSDATA, NULL);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    //ret = curl_easy_setopt(easy, CURLOPT_HEADERFUNCTION, _curl_header_func);
+    ret = curl_easy_setopt(easy, CURLOPT_HEADERDATA, NULL);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    ret = curl_easy_setopt(easy, CURLOPT_CONNECTTIMEOUT, timeout);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+    ret = curl_easy_setopt(easy, CURLOPT_FOLLOWLOCATION, 1);
+    if (ret) ERR("%s", curl_easy_strerror(ret));
+
+    retm = curl_multi_add_handle(curlm, easy);
+    if (retm) {
+        ERR("curl multi add handle failed: %s", curl_multi_strerror(retm));
+        curl_easy_cleanup(easy);
+        return NULL;
+    }
+    File_Downloader *fd = malloc(sizeof(File_Downloader));
+    fd->curl = easy;
+    fd->url = strdup(src);
+    fd->file_name = strdup(dst);
+    return fd;
+}
+
+static void
+_file_download_do()
+{
+    CURLMcode retm;
     int still_running;
     while (1) {
         struct timeval twait;
@@ -197,6 +241,7 @@ int main()
 
         retm = curl_multi_fdset(curlm, &fd_read, &fd_write, &fd_err, &max_fd);
 
+        // FIXME: Use nemo's internal select loop
         if (max_fd == -1) {
             // Wait at least 100 milliseconds.
             struct timeval twait = {0, 100000};
@@ -209,7 +254,6 @@ int main()
             break;
         }
 
-        // loop
         retm = curl_multi_perform(curlm, &still_running);
         if (retm == CURLM_CALL_MULTI_PERFORM) {
             LOG("perform again");
@@ -226,49 +270,151 @@ int main()
         }
     }
 
-    retm = curl_multi_remove_handle(curlm, curl);
-    //ret = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
+    //retm = curl_multi_remove_handle(curlm, curl);
+    //curl_easy_cleanup(curl);
+    //fclose(fp);
+}
 
-    fclose(fp);
-    w = 600, h = 600;
+typedef struct _Tile
+{
+    unsigned int zoom;
+    unsigned int w, h;  // Grid width, height
+} Tile;
+
+typedef struct _TileItem
+{
+    const char *url;
+    const char *filename;
+    unsigned int x, y;
+    pixman_image_t *pimg;
+} TileItem;
+
+static int tileitem_size = 255;
+
+static void
+_map_tilecoord_to_region(unsigned int zoom,
+                         int x, int y,
+                         double *lon, double *lat)
+{
+    double size = pow(2, zoom) * tileitem_size;
+
+    LOG("%lf", size);
+    // Referece: http://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+    if (lon) *lon = (x / size * 360.0) - 180;
+    if (lat) {
+        double n = M_PI - (2.0 * M_PI * y / size);
+        *lat = 180.0 / M_PI *atan(0.5 * (exp(n) - exp(-n)));
+    }
+}
+
+static void
+_map_region_to_tilecoord(double zoom,
+                         double lon, double lat,
+                         int *x, int *y)
+{
+    double size = pow(2, zoom) * tileitem_size;
+
+    if (x) *x = floor((lon + 180.0) / 360.0 * size);
+    if (y) {
+        *y = floor((1.0 - log(tan(lat * M_PI / 180.0)
+                              + (1.0 / cos(lat * M_PI / 180.0)))
+                           / M_PI) / 2.0 * size);
+    }
+}
+
+int main()
+{
+    cairo_surface_t *surf;
+    cairo_t *cr;
+    cairo_user_data_key_t key;
+
+    int w = 600, h = 600;
+
+    _file_download_init();
+
+    double zoom = 16;
+    double lon = 126.9761088, lat = 37.2929565;
+    int tx, ty;
+
+    // Get left,top position in the tile coordinate
+    _map_region_to_tilecoord(zoom, lon, lat, &tx, &ty);
+    //_map_tilecoord_to_region(5, x, y, &lon, &lat);
+
+    //LOG("%lf: %lf %lf <-> %u %u", zoom, lon, lat, x, y);
+
     surf = _cairo_surface_create(0, w, h, &key);
     RET_IF(!surf, -1);
-    cr = _cairo_create(surf);
+    cr = _cairo_create(surf, 255, 255, 255, 255);
     RET_IF(!surf, -1);
 
     cairo_rectangle(cr, 10, 10, 100, 100);
     cairo_stroke(cr);
 
-    pixman_image_t *pimg = pixman_load_jpeg_file(file);
-    RET_IF(!pimg, -1);
+    // Tile Index
+    int tix, tiy;
+    tix = tx/tileitem_size;
 
-    int pw, ph;
-    pw = pixman_image_get_width(pimg);
-    ph = pixman_image_get_height(pimg);
-    unsigned char *data = (unsigned char *)pixman_image_get_data(pimg);
-    LOG("pixman: %d %d", pw, ph);
+    // left, top position in the user coordinate (inside window)
+    int ux, uy;
+    ux = (w - tileitem_size)/2;
+    LOG("tix:%d ux:%d, tx:%d", tix, ux, tx);
 
-    cairo_format_t format = CAIRO_FORMAT_ARGB32;
-    int stride = cairo_format_stride_for_width (format, pw);
-    LOG("%d", stride);
-    cairo_surface_t *img = cairo_image_surface_create_for_data(data, format, pw, ph, stride);
+    while (tix >= 0) {
+        tix--;
+        if (tix < 0) {
+            tix = 0;
+            break;
+        }
+        ux -= tileitem_size;
+        if (ux < 0) break;
+    }
 
-    double ww, hh;
-    ww = cairo_image_surface_get_width(img);
-    hh = cairo_image_surface_get_height(img);
-    LOG("cairo: %lf %lf", ww, hh);
-    cairo_set_source_surface(cr, img, 0, 0);
-    cairo_paint(cr);
+    LOG("tix:%d ux:%d", tix, ux);
+    for ( ; (ux < w) && (tix <= (pow(2, zoom) - 1)) ; ux += tileitem_size, tix++) {
+        tiy = ty/tileitem_size;
+        uy = (h - tileitem_size)/2;
+        while (tiy >= 0) {
+            tiy--;
+            if (tiy < 0) {
+                tiy = 0;
+                break;
+            }
+            uy -= tileitem_size;
+            if (uy < 0) break;
+        }
+        LOG("tiy:%d uy:%d", tiy, uy);
+        for ( ; (uy < h) && (tiy <= pow(2, zoom - 1)) ; uy += tileitem_size, tiy++) {
+            char *url = _map_url_get_mapquest(zoom, tix, tiy);
+            LOG("%s", url);
+            char *file = _strdup_printf("%0.2lf.%d.%d.jpg", zoom, tix, tiy);
 
-    cairo_surface_destroy(img);
+            _file_download_create(url, file, 0);
+            _file_download_do();
+
+            pixman_image_t *pimg = pixman_load_jpeg_file(file);
+
+            int pw, ph;
+            pw = pixman_image_get_width(pimg);
+            ph = pixman_image_get_height(pimg);
+            unsigned char *data = (unsigned char *)pixman_image_get_data(pimg);
+
+            cairo_format_t format = CAIRO_FORMAT_ARGB32;
+            int stride = cairo_format_stride_for_width (format, pw);
+            cairo_surface_t *img = cairo_image_surface_create_for_data(data, format, pw, ph, stride);
+
+            double ww, hh;
+            ww = cairo_image_surface_get_width(img);
+            hh = cairo_image_surface_get_height(img);
+
+            cairo_set_source_surface(cr, img, ux, uy);
+            cairo_paint(cr);
+        }
+    }
 
     _Cairo_Render func = cairo_surface_get_user_data (surf, &key);
     RET_IF(!func, -1);
     if (func) func(cr, w, h);
 
-    curl_multi_cleanup(curlm);
-    curl_global_cleanup();
 
     cairo_surface_destroy(surf);
     cairo_destroy(cr);
