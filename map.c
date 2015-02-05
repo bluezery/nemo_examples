@@ -124,6 +124,7 @@ _curl_write_func(void *data, size_t item_size, size_t num_items, void *userdata)
 
 
 CURLM *curlm;
+struct nemolist file_download_lists;
 
 static bool
 _file_download_init()
@@ -137,20 +138,16 @@ _file_download_init()
 
     curlm = curl_multi_init();
     if (!curlm) return false;
-    return true;
-}
 
-static void
-_file_download_cleanup()
-{
-    if (curlm) curl_multi_cleanup(curlm);
-    curl_global_cleanup();
+    nemolist_init(&file_download_lists);
+    return true;
 }
 
 typedef struct _FileDownloader {
     struct nemolist link;
     CURL *curl;
     char *url;
+    FILE *fp;
     char *filename;
     int ux, uy;
 
@@ -172,6 +169,7 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
         FileDownloader *fd = malloc(sizeof(FileDownloader));
         fd->url = strdup(src);
         fd->filename = strdup(dst);
+        nemolist_insert(&file_download_lists, &fd->link);
         return fd;
     }
     fp = fopen(dst, "w+");
@@ -204,7 +202,7 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
     if (ret) ERR("%s", curl_easy_strerror(ret));
 
     retm = curl_multi_add_handle(curlm, easy);
-    if (retm) {
+    if (retm != CURLM_OK) {
         ERR("curl multi add handle failed: %s", curl_multi_strerror(retm));
         curl_easy_cleanup(easy);
         return NULL;
@@ -212,8 +210,41 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
     FileDownloader *fd = malloc(sizeof(FileDownloader));
     fd->curl = easy;
     fd->url = strdup(src);
+    fd->fp = fp;
     fd->filename = strdup(dst);
+    nemolist_insert(&file_download_lists, &fd->link);
     return fd;
+}
+
+static void
+_file_download_destroy(FileDownloader *fd)
+{
+    CURLMcode retm;
+    RET_IF(!fd);
+    if (fd->curl) {
+        retm = curl_multi_remove_handle(curlm, fd->curl);
+        if (retm != CURLM_OK)
+            ERR("curl multi remove handle failed: %s",
+                    curl_multi_strerror(retm));
+        curl_easy_cleanup(fd->curl);
+    }
+    if (fd->fp)fclose(fd->fp);
+    free(fd->filename);
+    free(fd->url);
+    nemolist_remove(&fd->link);
+}
+
+static void
+_file_download_cleanup()
+{
+    FileDownloader *fd, *tmp;
+    nemolist_for_each_safe(fd, tmp, &file_download_lists, link) {
+        _file_download_destroy(fd);
+    }
+    nemolist_empty(&file_download_lists);
+
+    if (curlm) curl_multi_cleanup(curlm);
+    curl_global_cleanup();
 }
 
 static void
@@ -234,11 +265,32 @@ _file_download_do()
                 }
             }
         } else {
+            ERR("curl multi timeout failed: %s", curl_multi_strerror(retm));
             twait.tv_usec = 100000; // minimum: 100 milliseconds.
         }
 
+        int n_msg;
+        CURLMsg *msg;
+        while ((msg = curl_multi_info_read(curlm, &n_msg))) {
+            if (msg->msg == CURLMSG_DONE) {
+                FileDownloader *fd, *tmp;
+                nemolist_for_each_safe(fd, tmp, &file_download_lists, link) {
+                    if (fd->curl == msg->easy_handle) {
+                        LOG("completed %s", fd->filename);
+                        // FIXME: callback is needed!!
+                        retm = curl_multi_remove_handle(curlm, fd->curl);
+                        if (retm != CURLM_OK)
+                            ERR("curl multi remove handle failed: %s",
+                                    curl_multi_strerror(retm));
+                        curl_easy_cleanup(fd->curl);
+                        fd->curl = NULL;
 
-
+                        fclose(fd->fp);
+                        fd->fp = NULL;
+                    }
+                }
+            }
+        }
 
         int max_fd;
         fd_set fd_read;
@@ -252,6 +304,10 @@ _file_download_do()
         int r;
 
         retm = curl_multi_fdset(curlm, &fd_read, &fd_write, &fd_err, &max_fd);
+        if (retm != CURLM_OK) {
+            ERR("curl multi fdset failed: %s", curl_multi_strerror(retm));
+            break;
+        }
 
         // FIXME: Use nemo's internal select loop
         if (max_fd == -1) {
@@ -274,17 +330,11 @@ _file_download_do()
             ERR("curl multi perform failed: %s", curl_multi_strerror(retm));
             break;
         }
-        if (still_running) {
-            LOG("still_running");
-        } else {
-            LOG("perform end");
+        if (!still_running) {
+            LOG("Multi perform ended");
             break;
         }
     }
-
-    //retm = curl_multi_remove_handle(curlm, curl);
-    //curl_easy_cleanup(curl);
-    //fclose(fp);
 }
 
 typedef struct _Tile
@@ -401,7 +451,8 @@ int main()
     _file_download_init();
 
     double zoom = 16;
-    double lon = 126.9761088, lat = 37.2929565;
+    double lat = 37.3691131, lon = -122.0241857;
+    //double lon = 126.9761088, lat = 37.2929565;
     int tx, ty;
 
     // Get left,top position in the tile coordinate
@@ -422,7 +473,6 @@ int main()
     // left, top position in the user coordinate (inside window)
     int ux, uy;
     ux = (w - tileitem_size)/2;
-    LOG("tix:%d ux:%d, tx:%d", tix, ux, tx);
 
     while (tix >= 0) {
         tix--;
@@ -435,8 +485,6 @@ int main()
     }
 
     // Create download list
-    struct nemolist downloads;
-    nemolist_init(&downloads);
     for ( ; (ux < w) && (tix <= (pow(2, zoom) - 1)) ; ux += tileitem_size, tix++) {
         tiy = ty/tileitem_size;
         uy = (h - tileitem_size)/2;
@@ -451,21 +499,17 @@ int main()
         }
         for ( ; (uy < h) && (tiy <= pow(2, zoom - 1)) ; uy += tileitem_size, tiy++) {
             char *url = _map_url_get_mapquest(zoom, tix, tiy);
-            LOG("%s", url);
             char *file = _strdup_printf("%s/%0.2lf.%d.%d.jpg", path, zoom, tix, tiy);
 
             FileDownloader *fd = _file_download_create(url, file, 0);
             if (!fd) {
                 ERR("file download create failed: %s -> %s", url, file);
-                free(file);
-                free(url);
-                continue;
+            } else {
+                fd->ux = ux;
+                fd->uy = uy;
             }
-            free(file);
             free(url);
-            fd->ux = ux;
-            fd->uy = uy;
-            nemolist_insert(&downloads, &fd->link);
+            free(file);
         }
     }
 
@@ -474,10 +518,9 @@ int main()
 
     // Load downloaded files
     FileDownloader *fd;
-    nemolist_for_each(fd, &downloads, link) {
+    nemolist_for_each(fd, &file_download_lists, link) {
          Image *img = _image_create(fd->filename);
          cairo_set_source_surface(cr, img->surface, fd->ux, fd->uy);
-         fflush(NULL);  // flushing all downloaded files before render
          cairo_paint(cr);
     }
 
