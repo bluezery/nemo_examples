@@ -281,18 +281,16 @@ int main(int argc, char *argv[])
 {
     // Use font-config
     //const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
-    //const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
-    const char *font_file = "/usr/share/fonts/ttf/LiberationSans-Regular.ttf";
+    const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
+    //const char *font_file = "/usr/share/fonts/ttf/LiberationSans-Regular.ttf";
     //const char *font_file = "/usr/share/fonts/opentype/cantarell/Cantarell-Regular.otf"; // OpenType
     //const char *font_file = "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf"; // fixed witdh
     unsigned int font_idx = 0;
 
-    double font_size = 40;
+    double font_size = 70;
 
     char **line_txt;
     int line_len;
-
-    int w, h;
 
     Font *font;
     Text **text;
@@ -336,8 +334,15 @@ int main(int argc, char *argv[])
     cairo_t *cr;
     cairo_surface_t *surf;
 
-    w = 600;
-    h = 600;
+    int w = 0, h = 0;
+    // calculate width, height
+    for (int i = 0 ; i < line_len ; i++) {
+        if (w < text[i]->width)
+            w = text[i]->width;
+        h += text[i]->height;
+    }
+
+    LOG("width: %d, height: %d", w, h);
     cairo_user_data_key_t key;
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);

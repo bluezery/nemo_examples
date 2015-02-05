@@ -461,10 +461,6 @@ int main()
 
     //LOG("%lf: %lf %lf <-> %u %u", zoom, lon, lat, x, y);
 
-    surf = _cairo_surface_create(0, w, h, &key);
-    RET_IF(!surf, -1);
-    cr = _cairo_create(surf, 255, 255, 255, 255);
-    RET_IF(!surf, -1);
     LOG("%s", path);
     // Tile Index
     int tix, tiy;
@@ -516,6 +512,10 @@ int main()
     //  Download do
     _file_download_do();
 
+    surf = _cairo_surface_create(0, w, h, &key);
+    RET_IF(!surf, -1);
+    cr = _cairo_create(surf, 255, 255, 255, 255);
+    RET_IF(!cr, -1);
     // Load downloaded files
     FileDownloader *fd;
     nemolist_for_each(fd, &file_download_lists, link) {
