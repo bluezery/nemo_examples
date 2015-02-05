@@ -62,6 +62,10 @@ _cairo_render(cairo_t *cr, int w, int h)
     unsigned char *data = cairo_image_surface_get_data(surface);
 
     window = _window_create(w, h, stride);
+    if (!window){
+        ERR("_window_create failed");
+        return;
+    }
     _window_set_buffer(window, data, h * stride);
     _window_loop(window);
 }

@@ -184,7 +184,7 @@ _display_create(const char *name, void *data)
 
     display = wl_display_connect(name);
     if (!display) {
-        ERR("wl display failed:%s ", strerror(errno));
+        ERR("wl display failed: %s ", strerror(errno));
         return NULL;
     }
     registry = wl_display_get_registry(display);
@@ -335,10 +335,16 @@ _window_create(unsigned int w, unsigned int h, unsigned int stride)
     wl_log_set_handler_client(_wl_log);
 
     window->display = _display_create(NULL, window);
+    if (!window->display) {
+        ERR("display create failed");
+        free(window);
+        return NULL;
+    }
     if (!window->compositor || !window->shm ||
         !window->shell ) {
         ERR("compositor or shm or shell or eat is not received");
 	    wl_display_disconnect(window->display);
+	    free(window);
         return NULL;
     }
     window->pool = _shm_pool_create(window->shm, h * stride);
