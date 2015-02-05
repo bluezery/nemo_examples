@@ -282,7 +282,7 @@ int main(int argc, char *argv[])
     // Use font-config
     //const char *font_file = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"; // TrueType
     //const char *font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"; // Sans Font
-    const char *font_file = "usr/share/fonts/ttf/LiberationSans-Regular.ttf";
+    const char *font_file = "/usr/share/fonts/ttf/LiberationSans-Regular.ttf";
     //const char *font_file = "/usr/share/fonts/opentype/cantarell/Cantarell-Regular.otf"; // OpenType
     //const char *font_file = "/usr/share/fonts/truetype/msttcorefonts/Courier_New.ttf"; // fixed witdh
     unsigned int font_idx = 0;
