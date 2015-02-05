@@ -25,7 +25,7 @@
 #include <cairo.h>
 #include <cairo-ft.h>
 
-
+#include "util.h"
 #include "log.h"
 
 typedef struct _File_Map
@@ -286,6 +286,7 @@ static Font *
 _font_create(const char *file, unsigned int idx, double size)
 {
     RET_IF(!file, NULL);
+    RET_IF(!_file_exist(file), NULL);
 
     Font *font;
 
