@@ -1,4 +1,4 @@
-CC=gcc -std=c99
+CC=clang #gcc -std=c99
 FLAGS=`pkg-config --libs --cflags cairo pixman-1 libpng12 wayland-client` -ljpeg -lm 
 ## ecore ecore-evas evas
 
