@@ -455,6 +455,12 @@ int main()
             char *file = _strdup_printf("%s/%0.2lf.%d.%d.jpg", path, zoom, tix, tiy);
 
             FileDownloader *fd = _file_download_create(url, file, 0);
+            if (!fd) {
+                ERR("file download create failed: %s -> %s", url, file);
+                free(file);
+                free(url);
+                continue;
+            }
             free(file);
             free(url);
             fd->ux = ux;
