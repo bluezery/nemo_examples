@@ -188,7 +188,7 @@ _file_download_create(const char *src, const char *dst, unsigned int timeout)
     //    ERR("%s", curl_easy_strerror(ret));
     ret = curl_easy_setopt(easy, CURLOPT_URL, src);
     if (ret) ERR("%s", curl_easy_strerror(ret));
-    ret = curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, _curl_write_func);
+    ret = curl_easy_setopt(easy, CURLOPT_WRITEFUNCTION, NULL);
     if (ret) ERR("%s", curl_easy_strerror(ret));
     ret = curl_easy_setopt(easy, CURLOPT_WRITEDATA, fp);
     if (ret) ERR("%s", curl_easy_strerror(ret));
@@ -471,6 +471,7 @@ int main()
     nemolist_for_each(fd, &downloads, link) {
          Image *img = _image_create(fd->filename);
          cairo_set_source_surface(cr, img->surface, fd->ux, fd->uy);
+         fflush(NULL);  // flushing all downloaded files before render
          cairo_paint(cr);
     }
 
