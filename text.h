@@ -97,7 +97,7 @@ FT_Library _ft_lib;
 
 
 static void
-_file_map_del(File_Map *fmap)
+_file_map_destroy(File_Map *fmap)
 {
     RET_IF(!fmap);
     if (munmap(fmap->data, fmap->len) < 0)
@@ -105,7 +105,7 @@ _file_map_del(File_Map *fmap)
 }
 
 static File_Map *
-_file_map_new(const char *file)
+_file_map_create(const char *file)
 {
     RET_IF(!file, NULL);
 
@@ -161,7 +161,7 @@ _font_shutdown()
 }
 
 static void
-_font_del(Font *font)
+_font_destroy(Font *font)
 {
     RET_IF(!font);
     if (font->hb_font) hb_font_destroy(font->hb_font);
@@ -170,7 +170,7 @@ _font_del(Font *font)
     free(font);
 }
 static FT_Face
-_font_ft_new(const char *file, unsigned int idx)
+_font_ft_create(const char *file, unsigned int idx)
 {
     FT_Face ft_face;
 
@@ -181,7 +181,7 @@ _font_ft_new(const char *file, unsigned int idx)
 
 // if backend is 1, it's freetype, else opentype
 static hb_font_t *
-_font_hb_new(const char *file, unsigned int idx, int backend)
+_font_hb_create(const char *file, unsigned int idx, int backend)
 {
     File_Map *map = NULL;
     hb_blob_t *blob;
@@ -191,14 +191,14 @@ _font_hb_new(const char *file, unsigned int idx, int backend)
 
     RET_IF(!file, NULL);
 
-    map = _file_map_new(file);
+    map = _file_map_create(file);
     if (!map->data || !map->len) return NULL;
 
     blob = hb_blob_create(map->data, map->len,
             HB_MEMORY_MODE_READONLY_MAY_MAKE_WRITABLE, map,
-            (hb_destroy_func_t)_file_map_del);
+            (hb_destroy_func_t)_file_map_destroy);
     if (!blob) {
-        _file_map_del(map);
+        _file_map_destroy(map);
         return NULL;
     }
 
@@ -225,7 +225,7 @@ _font_hb_new(const char *file, unsigned int idx, int backend)
 }
 
 static cairo_scaled_font_t *
-_font_cairo_scaled_new(const char *file, double height, unsigned int upem)
+_font_cairo_scaled_create(const char *file, double height, unsigned int upem)
 {
     RET_IF(!file, NULL);
     RET_IF(height <= 0, NULL);
@@ -238,7 +238,7 @@ _font_cairo_scaled_new(const char *file, double height, unsigned int upem)
     FT_Face ft_face;
     double scale;
 
-    ft_face = _font_ft_new(file, 0);
+    ft_face = _font_ft_create(file, 0);
     if (ft_face) {
         cairo_face = cairo_ft_font_face_create_for_ft_face(ft_face, 0);
         if (cairo_font_face_set_user_data(cairo_face, NULL, ft_face,
@@ -283,7 +283,7 @@ _font_cairo_scaled_new(const char *file, double height, unsigned int upem)
 }
 
 static Font *
-_font_new(const char *file, unsigned int idx, double size)
+_font_create(const char *file, unsigned int idx, double size)
 {
     RET_IF(!file, NULL);
 
@@ -297,7 +297,7 @@ _font_new(const char *file, unsigned int idx, double size)
 
     unsigned int upem;
 
-    hb_font = _font_hb_new(file, 0, 0);
+    hb_font = _font_hb_create(file, 0, 0);
     if (!hb_font) return NULL;
 
     // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
@@ -305,10 +305,10 @@ _font_new(const char *file, unsigned int idx, double size)
     upem = hb_face_get_upem(hb_font_get_face(hb_font));
 
     // Create freetype !!
-    ft_face = _font_ft_new(file, 0);
+    ft_face = _font_ft_create(file, 0);
     if (!ft_face) return NULL;
 
-    cairo_font = _font_cairo_scaled_new(file, size, upem);
+    cairo_font = _font_cairo_scaled_create(file, size, upem);
     cairo_font_extents_t extents;
     cairo_scaled_font_extents(cairo_font, &extents);
 
@@ -330,7 +330,7 @@ _font_new(const char *file, unsigned int idx, double size)
 }
 
 static void
-_text_cairo_del(Cairo_Text *ct)
+_text_cairo_destroy(Cairo_Text *ct)
 {
     RET_IF(!ct);
     cairo_glyph_free(ct->glyphs);
@@ -340,7 +340,7 @@ _text_cairo_del(Cairo_Text *ct)
 
 // if from or to is -1, the ignore range.
 static Cairo_Text *
-_text_cairo_new(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
+_text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
         int from, int to, bool is_cluster)
 {
     unsigned int num_glyphs;
@@ -492,7 +492,7 @@ _text_hb_get_idx_within_width(hb_buffer_t *buffer, unsigned int start, double wi
 }
 
 static hb_buffer_t *
-_text_hb_new(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len,
+_text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len,
         const char *dir, const char *script, const char *lang,
         const char *features, const char **hb_shapers, hb_font_t *hb_font)
 {
@@ -607,12 +607,12 @@ _text_hb_new(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len,
 }
 
 static void
-_text_del(Text *text)
+_text_destroy(Text *text)
 {
     RET_IF(!text);
     free(text->utf8);
     for (unsigned int i = 0 ; i < text->line_num ; i++) {
-        _text_cairo_del((text->cairo_texts)[i]);
+        _text_cairo_destroy((text->cairo_texts)[i]);
     }
     free(text->cairo_texts);
     free(text);
@@ -650,7 +650,7 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
 // You can restrict width and maximum number of line and set ellipsis.
 // if width or line is below or equal to 0, it's useless)
 static Text *
-_text_new(Font *font, const char *utf8,
+_text_create(Font *font, const char *utf8,
         const char *dir, const char *script, const char *lang, const char *features,
         double line_space,
         double width, unsigned int line_num, bool ellipsis)
@@ -693,7 +693,7 @@ _text_new(Font *font, const char *utf8,
     str_len = utf8_len;
 #endif
 
-    hb_buffer = _text_hb_new(NULL, str, str_len, dir, script, lang, features, font->shapers, font->hb_font);
+    hb_buffer = _text_hb_create(NULL, str, str_len, dir, script, lang, features, font->shapers, font->hb_font);
     num_glyphs = hb_buffer_get_length(hb_buffer);
 
     if (line_num <= 0) { // line num is not specified
@@ -734,7 +734,7 @@ _text_new(Font *font, const char *utf8,
 
         _str_ellipsis_append(&str, &str_len, i);
         // shaping again with ellipsis
-        hb_buffer = _text_hb_new(hb_buffer, str, str_len,
+        hb_buffer = _text_hb_create(hb_buffer, str, str_len,
                 dir, script, lang, features, font->shapers, font->hb_font);
         num_glyphs = hb_buffer_get_length(hb_buffer);
     }
@@ -744,12 +744,12 @@ _text_new(Font *font, const char *utf8,
     if ((line_num == 1) && (i <= num_glyphs)) {// if exact single line
         // FIXME: This should be here because  _text_hb_get_idx_within_width()
         // function cannot solve double precison for width.
-        cairo_texts[0] = _text_cairo_new(font, hb_buffer, str, str_len, 0, i, true);
+        cairo_texts[0] = _text_cairo_create(font, hb_buffer, str, str_len, 0, i, true);
     } else {
         unsigned int from = 0, to;
         for (unsigned int i = 0 ; i < line_num ; i++) {
             to = _text_hb_get_idx_within_width(hb_buffer, from, width, font->cairo_scale);
-            cairo_texts[i] = _text_cairo_new(font, hb_buffer, str, str_len, from, to, false);
+            cairo_texts[i] = _text_cairo_create(font, hb_buffer, str, str_len, from, to, false);
             from = to + 1;
         }
     }

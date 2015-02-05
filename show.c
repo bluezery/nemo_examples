@@ -296,9 +296,6 @@ int main(int argc, char *argv[])
     Font *font;
     Text **text;
 
-    cairo_t *cr;
-    cairo_surface_t *surf;
-
     if (argc != 2 || !argv[1]) {
         ERR("Usage: show [file name]");
         return 0;
@@ -317,13 +314,13 @@ int main(int argc, char *argv[])
     }
 
     // Create font
-    font = _font_new(font_file, font_idx, font_size);
+    font = _font_create(font_file, font_idx, font_size);
 
     double line_space = 0;
     // Create Text
     text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
-        text[i] = _text_new(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 100, 3, true);
+        text[i] = _text_create(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 0, 3, true);
         //_create_text2(line_txt[i], NULL, NULL, NULL, NULL, font);
         free(line_txt[i]);
     }
@@ -335,6 +332,9 @@ int main(int argc, char *argv[])
     //double margin_bottom = 0;
 
     // create cairo surface create
+    cairo_t *cr;
+    cairo_surface_t *surf;
+
     w = 600;
     h = 600;
     cairo_user_data_key_t key;
@@ -384,10 +384,10 @@ int main(int argc, char *argv[])
     cairo_surface_destroy(surf);
     cairo_destroy(cr);
 
-    _text_del(text[0]);
+    _text_destroy(text[0]);
     free(text);
 
-    _font_del(font);
+    _font_destroy(font);
     _font_shutdown();
 
     return 0;
