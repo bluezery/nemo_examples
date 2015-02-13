@@ -332,7 +332,6 @@ int main(int argc, char *argv[])
 
     // create cairo surface create
     cairo_t *cr;
-    cairo_surface_t *surf;
 
     int w = 0, h = 0;
     // calculate width, height
@@ -343,14 +342,12 @@ int main(int argc, char *argv[])
     }
 
     LOG("width: %d, height: %d", w, h);
-    cairo_user_data_key_t key;
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);
-    surf = _cairo_surface_create(param, w, h, &key);
 
-    // create cairo context
-    cr = _cairo_create(surf, 255, 255, 255, 255);
+    View *v = view_create(param, w, h, 255, 255, 255, 255);
 
+    cr = view_get_cairo(v);
     // Draw multiple texts
     cairo_save(cr);
     cairo_translate(cr, margin_left, margin_top);
@@ -383,12 +380,8 @@ int main(int argc, char *argv[])
     }
     cairo_restore(cr);
 
-	_Cairo_Render func = cairo_surface_get_user_data (surf, &key);
-	RET_IF(!func, -1);
-	if (func) func(cr, w, h);
-
-    cairo_surface_destroy(surf);
-    cairo_destroy(cr);
+    view_do(v);
+    view_destroy(v);
 
     _text_destroy(text[0]);
     free(text);

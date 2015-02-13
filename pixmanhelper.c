@@ -8,7 +8,7 @@
 #include <png.h>
 #include <jpeglib.h>
 
-#include <pixmanhelper.h>
+#include "pixmanhelper.h"
 
 static void a8r8g8b8_to_rgba_np(uint8_t *dst, uint8_t *src, int width, int height, int stride)
 {

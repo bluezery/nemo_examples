@@ -21,6 +21,7 @@
 #include <dirent.h>     // opendir
 
 #include <fnmatch.h>    // fnmatch
+#include <unistd.h>     // unlink
 
 #include "util.h"
 #include "log.h"

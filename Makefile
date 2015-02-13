@@ -1,13 +1,32 @@
-CC=clang #gcc -std=c99
-FLAGS=`pkg-config --libs --cflags cairo pixman-1 libpng12 wayland-client` -ljpeg -lm 
-## ecore ecore-evas evas
+CC=clang #gcc -std=c99q
 
-all:
-	$(CC) -Wall -g -o textviewer textviewer.c $(FLAGS) `pkg-config --libs --cflags harfbuzz freetype2`
-	$(CC) -Wall -g -o map map.c pixmanhelper.c -I. $(FLAGS) `pkg-config --libs --cflags libcurl`
-	$(CC) -Wall -g -o pkgmanager pkgmanager.c $(LFAGS) `pkg-config --libs --cflags libopkg`
-	$(CC) -Wall -g -o wayland wayland.c $(FLAGS) `pkg-config --libs xkbcommon`
+PKGS=cairo pixman-1 libpng12 wayland-client
+CFLAGS=-Wall -fvisibility=hidden -fPIC -DEAPI=__attribute__\(\(visibility\(\"default\"\)\)\)
+CFLAGS:=$(CFLAGS) `pkg-config --cflags $(PKGS)`
+LDFLAGS=-Wl,-z,defs -Wl,--as-needed -Wl,--hash-style=both
+LDFLAGS:=$(LDFLAGS) -lm -lrt -ljpeg `pkg-config --libs $(PKGS)`
+
+## ecore ecore-evas evas
+LIB=util.o cairo_view.o cairo_wayland.o pixmanhelper.o
+
+all: textviewer map pkgmanager wayland
+
+textviewer: textviewer.c  $(LIB)
+	$(CC) -g -o $@ $@.c $(LIB) $(CFLAGS) $(LDFLAGS) `pkg-config --cflags --libs harfbuzz freetype2`
+
+map: map.c $(LIB)
+	$(CC) -g -o $@ $@.c $(LIB) $(CFLAGS) $(LDFLAGS) `pkg-config --cflags --libs libcurl`
+
+pkgmanager: pkgmanager.c $(LIB)
+	$(CC) -g -o $@ $@.c $(LIB) $(CFLAGS) $(LDFLAGS) `pkg-config --cflags --libs libopkg`
+
+wayland: wayland.c $(LIB)
+	$(CC) -g -o $@ $@.c $(LIB) $(CFLAGS) $(LDFLAGS) `pkg-config --cflags --libs xkbcommon`
 	#$(CC) -Wall -g -o freetype-svg freetype-svg.c `pkg-config --libs --cflags freetype2 cairo ecore ecore-evas evas`
+
+%.o: %.c %.h
+	$(CC) -c $*.c $(CFLAGS)
 
 clean:
 	rm -rf textviewer map pkgmanager wayland freetype-svg
+	rm -rf $(LIB)

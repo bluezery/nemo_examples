@@ -3,7 +3,7 @@
 
 int main()
 {
-    Window *window;
+    Wl_Window *window;
 
     int w = 640, h = 480;
     int stride;
@@ -23,10 +23,10 @@ int main()
     cairo_rectangle(cr, 10, 10, 100, 100);
     cairo_fill(cr);
 
-    window = _window_create(w, h, stride);
+    window = wl_window_create(w, h, stride);
     unsigned char *map = cairo_image_surface_get_data(cairo_surface);
-    _window_set_buffer(window, map, h * stride);
-    _window_loop(window);
+    wl_window_set_buffer(window, map, h * stride);
+    wl_window_loop(window);
 
 #if 0
 	disp->xkb_context = xkb_context_new(0);
