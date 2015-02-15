@@ -82,6 +82,7 @@ view_do(View *view)
 {
     RET_IF(!view);
 
+    view_update(view);
     wl_window_loop(view->win);
 }
 
