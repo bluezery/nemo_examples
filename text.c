@@ -214,7 +214,7 @@ _font_hb_create(const char *file, unsigned int idx, int backend)
     hb_font_set_scale(font, upem, upem);
 
     if (backend == 1)
-        hb_ft_font_set_funcs(font); // FIXME: text width is weired for this backend
+        hb_ft_font_set_funcs(font);
     else
         hb_ot_font_set_funcs(font);
 
@@ -256,8 +256,7 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
                 CAIRO_FONT_WEIGHT_NORMAL);
     }
 
-    // It's pixel size, not font size
-    //scale = height * (upem)/(ft_face->max_advance_height);
+    // It's pixel size, not font size, scalng by EM space / Pixel space
     scale = height * upem/(ft_face->max_advance_height);
     cairo_matrix_init_identity(&ctm);
     cairo_matrix_init_scale(&font_matrix, scale, scale);
@@ -266,6 +265,7 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
     cairo_font_options_set_hint_style(font_options, CAIRO_HINT_STYLE_NONE);
     cairo_font_options_set_hint_metrics(font_options, CAIRO_HINT_METRICS_OFF);
     cairo_font_options_set_antialias(font_options, CAIRO_ANTIALIAS_DEFAULT);
+    // CAIRO_ANTIALIAS_DEFAULT, CAIRO_ANTIALIAS_NONE, CAIRO_ANTIALIAS_GRAY,CAIRO_ANTIALIAS_SUBPIXEL,         CAIRO_ANTIALIAS_FAST, CAIRO_ANTIALIAS_GOOD, CAIRO_ANTIALIAS_BEST
 
     if (cairo_font_options_get_antialias(font_options) == CAIRO_ANTIALIAS_SUBPIXEL) {
         cairo_font_options_set_subpixel_order(font_options, CAIRO_SUBPIXEL_ORDER_DEFAULT);
@@ -322,8 +322,8 @@ _font_create(const char *file, unsigned int idx, double size)
     font->cairo_font = cairo_font;
     // Scale will be used to multiply master outline coordinates to produce
     // pixel distances on a device.
-    // i.e., Conversion from mater (Em) space into device (or pixel) space.
-    font->cairo_scale = (double)size/upem;
+    font->cairo_scale = size / ft_face->max_advance_height;
+
     font->height = extents.height;
     font->max_width = extents.max_x_advance;
 
@@ -838,7 +838,9 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
             cairo_restore (cr);
         }
 
-        if (ct->num_clusters){
+        if (0) {
+            cairo_show_text(cr, text->utf8);
+        } else if (ct->num_clusters) {
             cairo_show_text_glyphs (cr,
                     text->utf8, text->utf8_len,
                     ct->glyphs, ct->num_glyphs,
@@ -850,7 +852,8 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
             /* This should be image suface */
             /* cairo_show_glyphs() doesn't support subpixel positioning */
             cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
-            cairo_fill (cr);
+            cairo_stroke (cr);
+            //cairo_fill (cr);
         }
     }
 
