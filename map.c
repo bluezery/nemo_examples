@@ -396,7 +396,6 @@ _file_download_do()
     CURLMcode code;
     int still_running;
     while (1) {
-        _file_download_read_info();
 
         int max_fd;
         fd_set fd_read;
@@ -455,6 +454,7 @@ _file_download_do()
             LOG("Multi perform ended");
             break;
         }
+        _file_download_read_info();
     }
 }
 
