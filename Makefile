@@ -7,7 +7,7 @@ LDFLAGS=-Wl,-z,defs -Wl,--as-needed -Wl,--hash-style=both
 LDFLAGS:=$(LDFLAGS) -lm -lrt -ljpeg `pkg-config --libs $(PKGS)`
 
 ## ecore ecore-evas evas
-LIB=util.o cairo_view.o cairo_wayland.o pixmanhelper.o
+LIB=util.o cairo_view.o wl_window.o pixmanhelper.o view.o
 
 all: textviewer map pkgmanager wayland
 

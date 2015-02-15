@@ -1,4 +1,5 @@
-#include "cairo_wayland.h"
+#include <cairo.h>
+#include "wl_window.h"
 #include "log.h"
 
 int main()
@@ -25,7 +26,7 @@ int main()
 
     window = wl_window_create(w, h, stride);
     unsigned char *map = cairo_image_surface_get_data(cairo_surface);
-    wl_window_set_buffer(window, map, h * stride);
+    wl_window_set_buffer(window, map, h * stride, w, h);
     wl_window_loop(window);
 
 #if 0

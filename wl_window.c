@@ -1,20 +1,21 @@
 #define _GNU_SOURCE
 #include <wayland-client.h>
-#include <cairo.h>
 //#include <xkbcommon/xkbcommon.h>
 
+#include <stdbool.h>
 #include <stdlib.h>  // free, calloc, mkostemp, malloc, getenv
-#include <errno.h>
-#include <string.h>   // strerror
 #include <unistd.h> // close, unlink
 #include <sys/mman.h>  // mmap
 #include <fcntl.h>      // posix_fallocate
 #include <sys/epoll.h>  // epoll
 
+#include <string.h>
+#include <errno.h>
+
 #include "log.h"
 #include "util.h"
-#include "nemolist.h"
-#include "cairo_wayland.h"
+#include "view.h"
+#include "wl_window.h"
 
 struct _Wl_Window {
     struct wl_display *display;
@@ -141,14 +142,12 @@ _registry_listener_global_remove(void *data, struct wl_registry *registry, uint3
 static void
 _surface_listner_enter(void *data, struct wl_surface *wl_surfacce, struct wl_output *wl_output)
 {
-    ERR("");
     return;
 }
 
 static void
 _surface_listner_leave(void *data, struct wl_surface *wl_surfacce, struct wl_output *wl_output)
 {
-    ERR("");
     return;
 }
 
@@ -372,66 +371,6 @@ wl_window_create(unsigned int w, unsigned int h, unsigned int stride)
     return win;
 }
 
-struct _FdHandler
-{
-    struct nemolist link;
-    int epfd;
-    FdHandlerCallback callback;
-    void *data;
-};
-
-struct nemolist fd_handler_list;
-
-bool
-fd_handler_init()
-{
-    nemolist_init(&fd_handler_list);
-    return true;
-}
-
-void
-fd_handler_destroy(FdHandler *fh)
-{
-    RET_IF(!fh);
-
-    nemolist_remove(&fh->link);
-    close(fh->epfd);
-    free(fh);
-}
-
-void
-fd_handler_shutdown()
-{
-    FdHandler *fh, *tmp;
-    nemolist_for_each_safe(fh, tmp, &fd_handler_list, link) {
-        fd_handler_destroy(fh);
-    }
-    nemolist_empty(&fd_handler_list);
-}
-
-FdHandler *
-fd_hanlder_add(int fd, FdHandlerCallback callback, uint32_t events, void *data)
-{
-    RET_IF(fd <= 2, NULL);
-    RET_IF(!callback, NULL);
-
-    int epfd;
-    struct epoll_event ep;
-
-    ep.events = events;
-    ep.data.fd = fd;
-    epfd = epoll_create1(EPOLL_CLOEXEC);
-
-    epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ep);
-
-    FdHandler *fh = calloc(sizeof(FdHandler), 1);
-    fh->epfd = epfd;
-    fh->callback = callback;
-    fh->data = data;
-    nemolist_insert(&fd_handler_list, &fh->link);
-    return fh;
-}
-
 void
 wl_window_destroy(Wl_Window *win)
 {
@@ -470,7 +409,11 @@ wl_window_loop(Wl_Window *win)
         }
 
         ep_cnt = epoll_wait(win->epfd, ep, sizeof(ep)/sizeof(ep[0]), -1);
-        //LOG("count: %d", ep_cnt);
+        if (ep_cnt == -1) {
+            perror("epoll wait failed: ");
+            continue;
+        }
+        //LOG("cnt: %d", ep_cnt);
         for (int i = 0 ; i < ep_cnt ; i++) {
             //LOG("%p", ep[i].data.ptr);
             if (ep[i].data.fd == win->display_fd) {
@@ -479,6 +422,7 @@ wl_window_loop(Wl_Window *win)
                     break;
                 }
                 if (ep[i].events & EPOLLIN) {
+                    LOG("Read display");
                     if (wl_display_dispatch(win->display) < 0) {
                         perror("wl display dispatch failed: ");
                         break;
@@ -497,28 +441,41 @@ wl_window_loop(Wl_Window *win)
                     }
                 }
             } else {
-                LOG("not display fd: %d", ep[i].data.fd);
+                if (!fd_handler_call(win->epfd, ep[i].data.fd, ep[i].events)) {
+                    ERR("invalid fd handler is added");
+                }
             }
         }
     }
 }
 
 void
-wl_window_set_buffer(Wl_Window *win, unsigned char *data, unsigned int size)
+wl_window_set_buffer(Wl_Window *win, unsigned char *data, unsigned int size, unsigned int w, unsigned h)
 {
+    RET_IF(!win);
     memcpy(win->main_map, data, size);
+    /*
+    wl_surface_damage(win->main_surface, 0, 0, w, h);
+    wl_surface_commit(win->main_surface);
+    */
 }
 
-void
+int
+wl_window_get_epoll_fd(Wl_Window *win)
+{
+    RET_IF(!win, -1);
+    return win->epfd;
+}
+
+bool
 wl_window_init()
 {
-    fd_handler_init();
-    sigtimer_init();
+    //if (!sigtimer_init()) return false;
+    return true;
 }
 
 void
 wl_window_shutdown()
 {
-    fd_handler_shutdown();
-    sigtimer_shutdown();
+    //sigtimer_shutdown();
 }

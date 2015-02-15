@@ -1,7 +1,7 @@
 // errno type
-#include "cairo_view.h"
 #include <errno.h>
 
+#include "view.h"
 #include "text.h"
 #include "log.h"
 
@@ -345,6 +345,8 @@ int main(int argc, char *argv[])
     int param = 0;
     if (argc == 2 && argv[1]) param = atoi(argv[1]);
 
+    view_init();
+
     View *v = view_create(param, w, h, 255, 255, 255, 255);
 
     cr = view_get_cairo(v);
@@ -382,6 +384,8 @@ int main(int argc, char *argv[])
 
     view_do(v);
     view_destroy(v);
+
+    view_shutdown();
 
     _text_destroy(text[0]);
     free(text);

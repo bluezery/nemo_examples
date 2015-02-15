@@ -334,4 +334,3 @@ image_destroy(Image *img)
    free(img);
 }
 
-

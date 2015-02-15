@@ -7,10 +7,12 @@
 #include <cairo-svg.h>
 #include <cairo-pdf.h>
 #include <cairo-ps.h>
+#include <errno.h>
+#include <string.h>   // strerror
 
 #include "log.h"
+#include "wl_window.h"
 #include "cairo_view.h"
-#include "cairo_wayland.h"
 
 #if 0
 #include <Ecore.h>
@@ -63,7 +65,7 @@ _cairo_render(cairo_t *cr, int w, int h)
         ERR("wl_window_create failed");
         return;
     }
-    wl_window_set_buffer(window, data, h * stride);
+    wl_window_set_buffer(window, data, h * stride, w, h);
     wl_window_loop(window);
 }
 
@@ -105,7 +107,6 @@ typedef void (*_Cairo_Render)(cairo_t *cr, int w_in_pt, int h_in_pt);
 static cairo_surface_t *
 _cairo_img_surface_create(_Cairo_Render func, void *key, int w, int h)
 {
-    RET_IF(!func || !key, NULL);
     cairo_surface_t *surface = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, w, h);
     cairo_status_t status = cairo_surface_status(surface);
 
@@ -114,13 +115,15 @@ _cairo_img_surface_create(_Cairo_Render func, void *key, int w, int h)
         if (surface) cairo_surface_destroy(surface);
         return NULL;
     }
-    if (cairo_surface_set_user_data(surface, key, func, NULL))
-        ERR("set user data failure");
+    if (func && key) {
+        if (cairo_surface_set_user_data(surface, key, func, NULL))
+            ERR("set user data failure");
+    }
 
     return surface;
 }
 
-static cairo_surface_t *
+cairo_surface_t *
 _cairo_surface_create(int type, int w, int h, void *closure_key)
 {
     cairo_surface_t *surface;
@@ -156,7 +159,7 @@ _cairo_surface_create(int type, int w, int h, void *closure_key)
     return surface;
 }
 
-static cairo_t *
+cairo_t *
 _cairo_create(cairo_surface_t *surface, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba)
 {
     unsigned int fr, fg, fb, fa;
@@ -190,78 +193,3 @@ _cairo_create(cairo_surface_t *surface, unsigned int br, unsigned int bg, unsign
 
     return cr;
 }
-
-struct __View
-{
-    cairo_surface_t *surf;
-    cairo_t *cr;
-    cairo_user_data_key_t *key;
-    int w, h;
-};
-
-View *
-view_create(int type, int w, int h, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba)
-{
-    cairo_surface_t *surf;
-    cairo_t *cr;
-    cairo_user_data_key_t *key = calloc(sizeof(cairo_user_data_key_t), 1);
-
-    surf = _cairo_surface_create(0, w, h, key);
-    cr = _cairo_create(surf, br, bg, bb, ba);
-
-    View *view = calloc(sizeof(View), 1);
-    view->surf = surf;
-    view->cr = cr;
-    view->w = w;
-    view->h = h;
-    view->key = key;
-    return view;
-}
-
-void
-view_destroy(View *view)
-{
-    RET_IF(!view);
-    cairo_surface_destroy(view->surf);
-    cairo_destroy(view->cr);
-    free(view->key);
-    free(view);
-}
-
-void
-view_do(View *view)
-{
-    RET_IF(!view);
-
-	_Cairo_Render func = cairo_surface_get_user_data (view->surf, view->key);
-	RET_IF(!func);
-
-	func(view->cr, view->w, view->h);
-}
-
-cairo_t *
-view_get_cairo(View *view)
-{
-    RET_IF(!view, NULL);
-    return view->cr;
-}
-
-cairo_surface_t *
-view_get_surface(View *view)
-{
-    RET_IF(!view, NULL);
-    return view->surf;
-}
-
-void
-view_init()
-{
-    wl_window_init();
-}
-
-void
-view_shutdown()
-{
-    wl_window_shutdown();
-}
-
