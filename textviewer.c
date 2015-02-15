@@ -1,5 +1,7 @@
 // errno type
 #include <errno.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "view.h"
 #include "text.h"
@@ -336,9 +338,11 @@ int main(int argc, char *argv[])
     int w = 0, h = 0;
     // calculate width, height
     for (int i = 0 ; i < line_len ; i++) {
-        if (w < text[i]->width)
-            w = text[i]->width;
-        h += text[i]->height;
+        double tw, th;
+        _text_get_size(text[i], &tw, &th);
+        if (w < tw)
+            w = tw;
+        h += th;
     }
 
     LOG("width: %d, height: %d", w, h);
@@ -355,29 +359,32 @@ int main(int argc, char *argv[])
     cairo_translate(cr, margin_left, margin_top);
     for (int i = 0 ; i < line_len ; i++) {
         if (!text[i]) continue;
-        if (text[i]->vertical) {
+        bool vertical;
+        _text_get_direction(text[i], &vertical, NULL);
+        if (vertical) {
             if (i) cairo_translate (cr, line_space, 0);
         }
         else {
             if (i) cairo_translate (cr, 0, line_space);
         }
         // draw cairo
-        _text_cairo_draw(cr, font, text[i]);
+        _text_draw_cairo(cr, font, text[i]);
 
         cairo_save(cr);
-        double ww = text[i]->width;
-        double hh = text[i]->height;
-        cairo_rectangle(cr, 0, 0, ww, hh);
+
+        double tw, th;
+        _text_get_size(text[i], &tw, &th);
+        cairo_rectangle(cr, 0, 0, tw, th);
         cairo_set_line_width(cr, 1);
         cairo_set_source_rgba(cr, 1, 0, 0, 1);
         cairo_stroke(cr);
         cairo_restore(cr);
 
-        if (text[i]->vertical) {
-            cairo_translate (cr, text[i]->height, 0);
+        if (vertical) {
+            cairo_translate (cr, th, 0);
         }
         else {
-            cairo_translate (cr, 0, text[i]->height);
+            cairo_translate (cr, 0, th);
         }
     }
     cairo_restore(cr);
