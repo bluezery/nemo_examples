@@ -1,6 +1,6 @@
 CC=clang #gcc -std=c99q
 
-PKGS=cairo pixman-1 libpng12 wayland-client harfbuzz freetype2
+PKGS=cairo pixman-1 libpng12 wayland-client harfbuzz freetype2 fontconfig
 CFLAGS=-Wall -fvisibility=hidden -fPIC -DEAPI=__attribute__\(\(visibility\(\"default\"\)\)\)
 CFLAGS:=$(CFLAGS) `pkg-config --cflags $(PKGS)` 
 LDFLAGS=-Wl,-z,defs -Wl,--as-needed -Wl,--hash-style=both

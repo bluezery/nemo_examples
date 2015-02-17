@@ -9,8 +9,7 @@ typedef struct _Text Text;
 
 bool _font_init();
 void _font_shutdown();
-void _font_destroy(Font *font);
-Font *_font_create(const char *file, unsigned int idx, double size);
+Font *_font_load(const char *family, const char *style, int size, int slant, int weight, int width, int spacing);
 
 void _text_destroy(Text *text);
 // You can restrict width and maximum number of line and set ellipsis.

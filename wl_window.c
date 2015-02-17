@@ -234,7 +234,6 @@ _shm_pool_create(struct wl_shm *shm, unsigned int size)
     strcat(name, temp);
 
     fd = mkostemp(name, O_CLOEXEC);
-    LOG("path:%s, temp:%s, name:%s", path, temp, name);
     if (fd >= 0) unlink(name);
     free(name);
 

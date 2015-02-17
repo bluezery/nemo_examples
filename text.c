@@ -25,6 +25,7 @@
 #include "util.h"
 #include "log.h"
 #include "text.h"
+#include "nemolist.h"
 
 typedef struct _File_Map File_Map;
 struct _File_Map {
@@ -33,12 +34,26 @@ struct _File_Map {
 };
 
 struct _Font {
+    struct nemolist link;
+
+    // font config proerties
+    char *filepath;
+    int idx;
+    char *family;
+    char *style;
+    int slant;
+    int weight;
+    int spacing;
+    int width;
     double size; // pixel size
+
     unsigned int upem;
 
+    // Harfbuzz
     hb_font_t *hb_font;
     const char **shapers;
 
+    // free type
     FT_Face ft_face;
 
     // Drawing Font
@@ -46,6 +61,8 @@ struct _Font {
     double cairo_scale; // used for converting size from upem space-> pixel space
     double height, max_width;
 };
+
+struct nemolist _font_list;
 
 typedef struct _Glyph Glyph;
 struct _Glyph {
@@ -76,7 +93,6 @@ struct _Cairo_Text {
     cairo_scaled_font_t *font;
 };
 
-typedef struct _Text Text;
 struct _Text
 {
     char *utf8;
@@ -92,8 +108,211 @@ struct _Text
     Cairo_Text **cairo_texts;
 };
 
-
 FT_Library _ft_lib;
+FcConfig *_font_config;
+
+#ifdef DEBUG
+static void
+_dump_cairo_font_extents(cairo_font_extents_t extents)
+{
+    LOG("ascent:%lf, descent:%lf, height:%lf, max_x_adv:%lf, max_y_adv:%lf",
+         extents.ascent, extents.descent, extents.height, extents.max_x_advance,
+         extents.max_y_advance);
+}
+
+static void
+_dump_text(Text *text)
+{
+    LOG("[%d]%s", text->utf8_len, text->utf8);
+    LOG("vertical:%d backward: %d", text->vertical, text->backward);
+    LOG("num glyphs:[%3d]", text->num_glyphs);
+    for(int i = 0 ; i < text->num_glyphs ; i++) {
+        LOG("[%3d]: index:%6lX, x:%3.3lf y:%3.3lf", i,
+            (text->glyphs)[i].index, (text->glyphs)[i].x, (text->glyphs)[i].y);
+    }
+    LOG("num clusters:[%3d] cluster flags[%3d]", text->num_clusters, text->cluster_flags);
+    for(int i = 0 ; i < text->num_clusters ; i++) {
+        LOG("[%3d]: num_bytes:%3d, num_glyphs:%3d", i,
+            (text->clusters)[i].num_bytes, (text->clusters)[i].num_glyphs);
+    }
+}
+
+static void
+_dump_hb_glyph(hb_glyph_info_t info, hb_glyph_position_t pos, hb_direction_t dir, hb_buffer_content_type_t type, hb_font_t *font)
+{
+    LOG("codepoint:%4x, mask:%4x, cluster:%d, x_advance:%3d, y_advance:%3d, x_offset:%3d, y_offset:%3d",
+        info.codepoint, info.mask, info.cluster,
+        pos.x_advance, pos.y_advance, pos.x_offset, pos.y_offset);
+
+    if (font) {
+        hb_codepoint_t code;
+        hb_codepoint_t pcode = 0;
+        char name[256], str[256];
+
+        // Harfbuzz codepoint
+        if (type == HB_BUFFER_CONTENT_TYPE_UNICODE) { // before shaping, get codepoint from unicode
+            hb_font_get_glyph(font, info.codepoint, 0, &code);
+        } else {  // itself already codepint.
+            code = info.codepoint;
+        }
+        hb_font_get_glyph_name(font, code, name, 255);
+        hb_font_glyph_to_string(font, code, str , 255); // Glyph ID
+        LOG("glyph_name:[%s] glyph_string:[%s]", name, str);
+
+        // Origin
+        hb_position_t org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y;
+        hb_font_get_glyph_origin_for_direction(font, code, dir, &org_x, &org_y);
+        hb_font_get_glyph_h_origin(font, code, &orgh_x, &orgh_y);
+        hb_font_get_glyph_v_origin(font, code, &orgv_x, &orgv_y);
+        LOG("Origin CurretDir[x:%d, y:%d] / hori(x:%d, y:%d)  vert(x:%d, y:%d)",
+            org_x, org_y, orgh_x, orgh_y, orgv_x, orgv_y);
+
+        // Advance
+        hb_position_t h_adv, v_adv;
+        hb_font_get_glyph_advance_for_direction(font, code, dir, &h_adv, &v_adv);
+        LOG("Advance[hori:%d vert:%d] / hori(%d), vert(%d)",
+            h_adv, v_adv,
+            hb_font_get_glyph_h_advance(font, code), hb_font_get_glyph_v_advance(font, code));
+
+        // Extents
+        hb_glyph_extents_t extd, ext;
+        hb_font_get_glyph_extents_for_origin(font, code, dir, &extd);
+        hb_font_get_glyph_extents(font, code, &ext);
+        LOG("Extents CurrentDir[x_bearing:%d, y_bearing:%d, width:%d, height:%d] [x_bearing:%d, y_bearing:%d, width:%d, height:%d]",
+            extd.x_bearing, extd.y_bearing, extd.width, extd.height,
+            ext.x_bearing, ext.y_bearing, ext.width, ext.height);
+
+        // Kerning
+        if (pcode != 0) {
+            hb_position_t x, y;
+            hb_position_t xx = 0, yy = 0;
+            if (HB_DIRECTION_IS_HORIZONTAL(dir))
+                xx = hb_font_get_glyph_h_kerning(font, code, pcode);
+            else
+                yy = hb_font_get_glyph_v_kerning(font, code, pcode);
+            hb_font_get_glyph_kerning_for_direction(font, code, pcode, dir, &x, &y);
+            LOG("kerning CurrentDir[x:%d y:%d] [x:%d, y:%d]", x, y, xx, yy);
+        }
+        pcode = code;
+#if 0
+        LOG("============= contour =============");
+        unsigned int idx = 0;
+        hb_position_t cx, cy, cxx, cyy;
+        while (hb_font_get_glyph_contour_point_for_origin(font, code, idx, dir, &cx, &cy)) {
+            if (!hb_font_get_glyph_contour_point(font, code, idx, &cxx, &cyy)) {
+                cxx = 0;
+                cyy = 0;
+            }
+            LOG("\t[%2d] cx: %d(%d), cy: %d(%d)", idx, cx, cxx, cy, cyy);
+            idx++;
+        }
+        LOG("===================================");
+#endif
+    }
+}
+
+static void
+_dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
+{
+    hb_face_t *face;
+    unsigned int x_ppem, y_ppem;
+    int x_scale, y_scale;
+    unsigned int num_glyphs;
+    hb_segment_properties_t prop;
+    hb_direction_t dir = hb_buffer_get_direction(buffer);
+    hb_buffer_content_type_t type = hb_buffer_get_content_type(buffer);
+    hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(buffer, &num_glyphs);
+    hb_glyph_position_t *poses = hb_buffer_get_glyph_positions(buffer, NULL);
+    hb_buffer_get_segment_properties(buffer, &prop);
+    hb_script_t script = hb_buffer_get_script(buffer);
+    hb_language_t lang = hb_buffer_get_language(buffer);
+
+    hb_font_get_ppem(font, &x_ppem, &y_ppem);
+    hb_font_get_scale(font, &x_scale, &y_scale);
+    face = hb_font_get_face(font);
+    LOG("========================== Font info ===============================");
+    LOG("\tx_ppem: %u, y_ppem: %u", x_ppem, y_ppem);
+    LOG("\tx_scale: %d, y_scale: %d", x_scale, y_scale);
+    LOG("\tidx:%u upem:%u glyph_count:%u", hb_face_get_index(face), hb_face_get_upem(face),
+            hb_face_get_glyph_count(face));
+    LOG("========================== Buffer info ===============================");
+    LOG("\tcontent_type: %d [unicode = 1, glyphs] Length:%d", type, hb_buffer_get_length(buffer));
+    LOG("\tdir: %d [LTR = 4, RTL, TTB, BTT]", dir);
+    LOG("\tcode point: %d",  hb_buffer_get_replacement_codepoint(buffer));
+    LOG("\tflag: %u [DEFAULT = 0, BOT = 1u, EOT = 2u, IGNORE = 4u",  hb_buffer_get_flags(buffer));
+    LOG("\tScript:%c%c%c%c, Language:%s",  script >> 24, script >> 16,
+        script >> 8, script, hb_language_to_string(lang));
+    LOG("\tProperty (Dir:%d, script:%c%c%c%c, language:%s)", prop.direction,
+        prop.script >> 24, prop.script >> 16, prop.script >> 8, prop.script,
+        hb_language_to_string(prop.language));
+
+    for (unsigned int i = 0 ; i < num_glyphs ; i++) {
+        LOG("==================== [%d] Glyph info =========================", i);
+        _dump_hb_glyph(infos[i], poses[i], dir, type, font);
+    }
+}
+
+static void
+_dump_cairo_glyph(cairo_glyph_t *glyph, unsigned int num_glyph)
+{
+    LOG("========================== cairo glyphs info ===============================");
+    for (unsigned int i = 0 ; i < num_glyph ; i++) {
+        LOG("[%2d] index: %6lX, x:%7.2lf y:%7.2lf",
+            i, glyph[i].index, glyph[i].x, glyph[i].y);
+    }
+}
+
+static void
+_dump_cairo_text_cluster(cairo_text_cluster_t *cluster, unsigned int num_cluster)
+{
+    LOG("========================== cairo clusters info ===============================");
+    for (unsigned int i = 0 ; i < num_cluster ; i++) {
+        LOG("[%2d] num_bytes: %d, num_glyphs: %d",
+            i, cluster[i].num_bytes, cluster[i].num_glyphs);
+    }
+}
+
+static void
+_dump_ft_face(FT_Face ft_face)
+{
+    LOG("===================== Font Face Info ==================");
+    LOG("has vertical: %ld", FT_HAS_VERTICAL(ft_face));
+    LOG("has horizontal: %ld", FT_HAS_HORIZONTAL(ft_face));
+    LOG("has kerning: %ld", FT_HAS_KERNING(ft_face));
+    LOG("sfnt: %ld", FT_IS_SFNT(ft_face));
+    LOG("trick: %ld", FT_IS_TRICKY(ft_face));
+    LOG("scalable: %ld", FT_IS_SCALABLE(ft_face));
+    LOG("fixed_width: %ld", FT_IS_FIXED_WIDTH(ft_face));
+    LOG("CID: %ld", FT_IS_CID_KEYED(ft_face)); // CID(Character Identifier Font),
+    LOG("bitmap: %ld", FT_HAS_FIXED_SIZES(ft_face));
+    LOG("color: %ld", FT_HAS_COLOR(ft_face));
+    LOG("multiple master: %ld", FT_HAS_MULTIPLE_MASTERS(ft_face));
+    LOG("w:%ld h:%ld hbx:x %ld, hby:%ld, hd:%ld, vbx:%ld, vby:%ld, vd:%ld",
+            ft_face->glyph->metrics.width, ft_face->glyph->metrics.height,
+            ft_face->glyph->metrics.horiBearingX, ft_face->glyph->metrics.horiBearingY,
+            ft_face->glyph->metrics.horiAdvance,
+            ft_face->glyph->metrics.vertBearingX, ft_face->glyph->metrics.vertBearingY,
+            ft_face->glyph->metrics.vertAdvance);
+    LOG("max_advance_width; %d max_advance_height: %d",
+        ft_face->max_advance_width, ft_face->max_advance_height);
+    LOG("========================================================");
+}
+
+#if 0
+// FIXME: make scaled font dump!!
+static void
+_dump_cairo_scaled_font(cairo_scaled_font_t *font)
+{
+    cairo_matrix_t ctm, scale_matirx;
+    cairo_font_extents extents;
+
+    cairo_scaled_font_extents(font, &extents);
+    cairo_scaled_font_get_ctm(font, &ctm);
+    cairo_scaled_font_get_scale_matrix(font, &scale_matrix);
+
+}
+#endif
+#endif
 
 static void
 _file_map_destroy(File_Map *fmap)
@@ -149,17 +368,21 @@ _font_init()
 {
     if (_ft_lib) return true;
     if (FT_Init_FreeType(&_ft_lib)) return false;
+    _font_config = FcInitLoadConfigAndFonts();
+    if (!_font_config) {
+        ERR("FcInitLoadConfigAndFonts failed");
+        FT_Done_FreeType(_ft_lib);
+        return false;
+    }
+    if (!FcConfigSetRescanInterval(_font_config, 0)) {
+        ERR("FcConfigSetRescanInterval failed");
+    }
+    nemolist_init(&_font_list);
+
     return true;
 }
 
-void
-_font_shutdown()
-{
-    if (_ft_lib) FT_Done_FreeType(_ft_lib);
-    _ft_lib = NULL;
-}
-
-void
+static void
 _font_destroy(Font *font)
 {
     RET_IF(!font);
@@ -167,6 +390,20 @@ _font_destroy(Font *font)
     if (font->ft_face) FT_Done_Face(font->ft_face);
     if (font->cairo_font) cairo_scaled_font_destroy(font->cairo_font);
     free(font);
+}
+
+void
+_font_shutdown()
+{
+    Font *temp;
+    nemolist_for_each(temp, &_font_list, link) {
+        _font_destroy(temp);
+    }
+    nemolist_empty(&_font_list);
+    if (_font_config) FcFini();
+    _font_config = NULL;
+    if (_ft_lib) FT_Done_FreeType(_ft_lib);
+    _ft_lib = NULL;
 }
 
 static FT_Face
@@ -282,11 +519,11 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
     return scaled_font;
 }
 
-Font *
-_font_create(const char *file, unsigned int idx, double size)
+static Font *
+_font_create(const char *filepath, unsigned int idx, const char *family, const char *style, int slant, int weight, int spacing, int width, double size)
 {
-    RET_IF(!file, NULL);
-    RET_IF(!_file_exist(file), NULL);
+    RET_IF(!filepath || !family || !style, NULL);
+    RET_IF(!_file_exist(filepath), NULL);
 
     Font *font;
 
@@ -298,7 +535,7 @@ _font_create(const char *file, unsigned int idx, double size)
 
     unsigned int upem;
 
-    hb_font = _font_hb_create(file, 0, 0);
+    hb_font = _font_hb_create(filepath, idx, 0);
     if (!hb_font) return NULL;
 
     // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
@@ -306,14 +543,22 @@ _font_create(const char *file, unsigned int idx, double size)
     upem = hb_face_get_upem(hb_font_get_face(hb_font));
 
     // Create freetype !!
-    ft_face = _font_ft_create(file, 0);
+    ft_face = _font_ft_create(filepath, 0);
     if (!ft_face) return NULL;
 
-    cairo_font = _font_cairo_scaled_create(file, size, upem);
+    cairo_font = _font_cairo_scaled_create(filepath, size, upem);
     cairo_font_extents_t extents;
     cairo_scaled_font_extents(cairo_font, &extents);
 
     font = (Font *)calloc(sizeof(Font), 1);
+    font->filepath = strdup(filepath);
+    font->idx = idx;
+    font->family = strdup(family);
+    font->style = strdup(style);
+    font->slant = slant;
+    font->weight = weight;
+    font->spacing = spacing;
+    font->width = width;
     font->size = size;
     font->upem = upem;
     font->hb_font = hb_font;
@@ -326,6 +571,112 @@ _font_create(const char *file, unsigned int idx, double size)
 
     font->height = extents.height;
     font->max_width = extents.max_x_advance;
+
+    return font;
+}
+
+// family: e.g. NULL, "LiberationMono", "Times New Roman", "Arial", etc.
+// style: e.g. NULL, "Regular"(Normal), "Bold", "Italic", "Bold Italic", etc.
+// slant: e.g. FC_SLANT_ROMAN, FC_SLANT_ITALIC, etc.
+// weight: e.g. FC_WEIGHT_LIGHT, FC_WEIGHT_REGULAR, FC_WEIGHT_BOLD, etc.
+// width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
+// spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
+Font *
+_font_load(const char *family, const char *style, int size, int slant, int weight, int width, int spacing)
+{
+    Font *font = NULL, *temp;
+    FcBool ret;
+    FcPattern *pattern;
+    FcFontSet *set;
+
+    if (!_font_config) return NULL;
+
+    // Find from already inserted font list
+    nemolist_for_each(temp, &_font_list, link) {
+        if ((family && !strcmp(temp->family, family)) &&
+            (style && !strcmp(temp->style, style)) &&
+            (temp->slant == slant) &&
+            (temp->weight == weight) &&
+            (temp->width == width) &&
+            (temp->spacing == spacing)) {
+            return temp;
+        }
+    }
+    // Create pattern
+    pattern = FcPatternCreate();
+    if (!pattern) {
+        ERR("FcPatternBuild");
+        return NULL;
+    }
+    if (family) FcPatternAddString(pattern, FC_FAMILY, (unsigned char *)family);
+    if (style) FcPatternAddString(pattern, FC_STYLE, (unsigned char *)style);
+    if (slant >= 0)  FcPatternAddInteger(pattern, FC_SLANT, slant);
+    if (weight >= 0)  FcPatternAddInteger(pattern, FC_WEIGHT, weight);
+    if (width >= 0)  FcPatternAddInteger(pattern, FC_SPACING, spacing);
+    if (spacing >= 0)  FcPatternAddInteger(pattern, FC_WIDTH, width);
+
+    FcConfigSubstitute(_font_config, pattern, FcMatchPattern);
+    FcDefaultSubstitute(pattern);
+
+    FcResult result;
+    set = FcFontSetCreate();
+    FcPattern *match;
+    // Find just exactly matched one
+    match = FcFontMatch(_font_config, pattern, &result);
+    if (match) FcFontSetAdd(set, match);
+
+    if (!match || !set->nfont) {  // Get fallback
+        LOG("Search fallback fonts");
+        FcFontSet *tset;
+        tset = FcFontSort(_font_config, pattern, FcTrue, NULL, &result);
+        if (!tset || !tset->nfont) {
+            ERR("There is no installed fonts");
+            FcFontSetDestroy(set);
+            return NULL;
+        }
+        for (int i = 0 ; i < tset->nfont ; i++) {
+            FcPattern *temp = FcFontRenderPrepare(NULL, pattern, tset->fonts[i]);
+            if (temp) FcFontSetAdd(set, temp);
+        }
+        FcFontSetDestroy(tset);
+    }
+    FcPatternDestroy(pattern);
+
+    if (!set->nfont || !set->fonts[0]) {
+        ERR("There is no installed fonts");
+        FcFontSetDestroy(set);
+        return NULL;
+    }
+
+    FcChar8 *filepath = NULL;
+    ret = FcPatternGetString(set->fonts[0], FC_FILE, 0, &filepath);
+    if (ret != FcResultMatch || !filepath) {
+        ERR("file path is not correct");
+        FcFontSetDestroy(set);
+        return NULL;
+    }
+
+    // Search already inserted list
+    nemolist_for_each(temp, &_font_list, link) {
+        if (!strcmp(temp->filepath, (char *)filepath)) {
+            FcFontSetDestroy(set);
+            return temp;
+        }
+    }
+
+    FcChar8 *_family = NULL, *_style = NULL;
+    int _slant, _weight, _spacing, _width;
+    FcPatternGetString(set->fonts[0], FC_FAMILY, 0, &_family);
+    FcPatternGetString(set->fonts[0], FC_STYLE, 0, &_style);
+    FcPatternGetInteger(set->fonts[0], FC_SLANT, 0, &_slant);
+    FcPatternGetInteger(set->fonts[0], FC_WEIGHT, 0, &_weight);
+    FcPatternGetInteger(set->fonts[0], FC_SPACING, 0, &_spacing);
+    FcPatternGetInteger(set->fonts[0], FC_WIDTH, 0, &_width);
+
+    font = _font_create((char *)filepath, 0, (char *)_family, (char *)_style,
+            _slant, _weight, _spacing, _width, size);
+    if (font) nemolist_insert_tail(&_font_list, &font->link);
+    FcFontSetDestroy(set);
 
     return font;
 }
@@ -793,7 +1144,6 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
 
     cairo_set_scaled_font(cr, font->cairo_font);
 
-
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
 
@@ -838,22 +1188,30 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
             cairo_restore (cr);
         }
 
-        if (0) {
-            cairo_show_text(cr, text->utf8);
-        } else if (ct->num_clusters) {
-            cairo_show_text_glyphs (cr,
-                    text->utf8, text->utf8_len,
-                    ct->glyphs, ct->num_glyphs,
-                    ct->clusters, ct->num_clusters,
-                    ct->cluster_flags);
-        } else if (1) {
-            cairo_show_glyphs (cr, ct->glyphs, ct->num_glyphs);
-        } else {
-            /* This should be image suface */
-            /* cairo_show_glyphs() doesn't support subpixel positioning */
-            cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
-            cairo_stroke (cr);
-            //cairo_fill (cr);
+        if (1) { // Cairo render/draw text itsef
+            if (1) {        // redner text
+                cairo_show_text(cr, text->utf8);
+            } else if (0) { // draw path
+                cairo_move_to(cr, 0, 0);
+                cairo_text_path(cr, text->utf8);
+                cairo_fill (cr);
+            }
+        } else { // Cairo render/draw by using given glyph or clusers
+            if (ct->num_clusters) { // render text by using glyph and clusters
+                cairo_show_text_glyphs (cr,
+                        NULL, 0,
+                        ct->glyphs, ct->num_glyphs,
+                        ct->clusters, ct->num_clusters,
+                        ct->cluster_flags);
+            } else if (0) {         // render text by using glyph
+                cairo_show_glyphs (cr, ct->glyphs, ct->num_glyphs);
+            } else {                // draw path by using glyph
+                cairo_move_to(cr, 0, 0);
+                /* This should be image suface */
+                /* cairo_show_glyphs() doesn't support subpixel positioning */
+                cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
+                cairo_fill (cr);
+            }
         }
     }
 

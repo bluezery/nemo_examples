@@ -168,7 +168,6 @@ static void _file_download_destroy(FileDownloader *fd);
 static void
 _file_download_read_info()
 {
-    CURLMcode code;
     int n_msg;
 
     CURLMsg *msg;
@@ -513,7 +512,7 @@ typedef struct _ImageData {
 static void
 _img_downloaded(FileDownloader *fd, const char *filename, void *data)
 {
-    ImageData *id = data;
+    //ImageData *id = data;
     //Image *img = image_create(filename);
     //LOG("Image downloaded: %s, %p", filename, img);
     //cairo_set_source_surface(id->cr, image_get_surface(img), id->ux, id->uy);
