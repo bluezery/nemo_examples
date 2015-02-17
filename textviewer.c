@@ -95,12 +95,7 @@ int main(int argc, char *argv[])
     }
 
     Font *font;
-    font = _font_load(NULL, "Italic", 70, -1, -1, -1, -1);
-    ERR("%p", font);
-    font = _font_load(NULL, "Regular", 70, -1, -1, -1, -1);
-    ERR("%p", font);
-    font = _font_load(NULL, "Italic", 70, -1, -1, -1, -1);
-    ERR("%p", font);
+    font = _font_load(NULL, "Bold", 70, -1, -1, -1, -1);
 
     // Read a file
     line_txt = _read_file(argv[1], &line_len);
@@ -114,21 +109,11 @@ int main(int argc, char *argv[])
     text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
         text[i] = _text_create(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 0, 3, true);
-        //_create_text2(line_txt[i], NULL, NULL, NULL, NULL, font);
         free(line_txt[i]);
     }
     free(line_txt);
-
-    double margin_left = 0;
-    //double margin_right = 0;
-    double margin_top = 0;
-    //double margin_bottom = 0;
-
-    // create cairo surface create
-    cairo_t *cr;
-
-    int w = 0, h = 0;
     // calculate width, height
+    int w = 0, h = 0;
     for (int i = 0 ; i < line_len ; i++) {
         double tw, th;
         _text_get_size(text[i], &tw, &th);
@@ -137,16 +122,15 @@ int main(int argc, char *argv[])
         h += th;
     }
 
-    //LOG("width: %d, height: %d", w, h);
-    int param = 0;
-    if (argc == 2 && argv[1]) param = atoi(argv[1]);
-
+    View *v;
+    cairo_t *cr;
     view_init();
-
-    View *v = view_create(param, w, h, 255, 255, 255, 255);
-
+    v = view_create(w, h, 255, 255, 255, 255);
     cr = view_get_cairo(v);
+
     // Draw multiple texts
+    double margin_left = 0, margin_top = 0;
+    //double margin_right = 0, margin_bottom = 0;
     cairo_save(cr);
     cairo_translate(cr, margin_left, margin_top);
     for (int i = 0 ; i < line_len ; i++) {

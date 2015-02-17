@@ -9,7 +9,7 @@
 
 // View
 typedef struct __View View;
-View *view_create(int type, int w, int h, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba);
+View *view_create(int w, int h, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba);
 cairo_t *view_get_cairo(View *view);
 cairo_surface_t *view_get_surface(View *view);
 void view_do(View *view);

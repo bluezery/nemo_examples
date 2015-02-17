@@ -568,7 +568,7 @@ int main()
     }
 
     view_init();
-    View *v = view_create(0, w, h, 255, 255, 255, 255);
+    View *v = view_create(w, h, 255, 255, 255, 255);
     cr = view_get_cairo(v);
 
     // Create download list

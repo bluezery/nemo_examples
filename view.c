@@ -17,7 +17,7 @@ struct __View
 };
 
 View *
-view_create(int type, int w, int h, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba)
+view_create(int w, int h, unsigned int br, unsigned int bg, unsigned int bb, unsigned int ba)
 {
     cairo_surface_t *surf;
     cairo_t *cr;
