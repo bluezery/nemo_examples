@@ -94,8 +94,10 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    /*
     Font *font;
     font = _font_load(NULL, "Bold", 70, -1, -1, -1, -1);
+    */
 
     // Read a file
     line_txt = _read_file(argv[1], &line_len);
@@ -108,19 +110,30 @@ int main(int argc, char *argv[])
     // Create Text
     text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
-        text[i] = _text_create(font, line_txt[i], NULL, NULL, NULL, NULL, line_space, 0, 3, true);
+        text[i] = _text_create(line_txt[i]); //NULL, NULL, NULL, NULL, line_space, 0, 3, true);
+        //_text_set_font_family(text[i], "LiberationMono");
+        //_text_set_direction(text[i], false, true);
+        //_text_set_width(text[i], 200);
+        //_text_set_height(text[i], 130);
+        //_text_set_ellipsis(text[i], true);
+        _text_set_font_size(text[i], 50);
+        //_text_set_wrap(text[i], 1);
         free(line_txt[i]);
     }
     free(line_txt);
+
     // calculate width, height
     int w = 0, h = 0;
+    /*
     for (int i = 0 ; i < line_len ; i++) {
         double tw, th;
         _text_get_size(text[i], &tw, &th);
         if (w < tw)
             w = tw;
         h += th;
-    }
+    }*/
+    w = 700;
+    h = 600;
 
     View *v;
     cairo_t *cr;
@@ -133,6 +146,7 @@ int main(int argc, char *argv[])
     //double margin_right = 0, margin_bottom = 0;
     cairo_save(cr);
     cairo_translate(cr, margin_left, margin_top);
+    ERR("%d", line_len);
     for (int i = 0 ; i < line_len ; i++) {
         if (!text[i]) continue;
         bool vertical;
@@ -144,12 +158,14 @@ int main(int argc, char *argv[])
             if (i) cairo_translate (cr, 0, line_space);
         }
         // draw cairo
-        _text_draw_cairo(cr, font, text[i]);
+        _text_draw(text[i], cr);
 
         // Draw text bounding box
         cairo_save(cr);
         double tw, th;
-        _text_get_size(text[i], &tw, &th);
+        tw = _text_get_width(text[i]);
+        th = _text_get_height(text[i]);
+        //_text_get_size(text[i], &tw, &th);
         cairo_rectangle(cr, 0, 0, tw, th);
         cairo_move_to(cr, 100, 30);
         cairo_set_line_width(cr, 1);
@@ -157,12 +173,8 @@ int main(int argc, char *argv[])
         cairo_stroke(cr);
         cairo_restore(cr);
 
-        if (vertical) {
-            cairo_translate (cr, th, 0);
-        }
-        else {
-            cairo_translate (cr, 0, th);
-        }
+        if (vertical) cairo_translate (cr, tw, 0);
+        else cairo_translate (cr, 0, th);
     }
     cairo_restore(cr);
 

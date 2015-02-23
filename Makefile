@@ -25,7 +25,7 @@ wayland: wayland.c $(LIB)
 	#$(CC) -Wall -g -o freetype-svg freetype-svg.c `pkg-config --libs --cflags freetype2 cairo ecore ecore-evas evas`
 
 %.o: %.c %.h
-	$(CC) -c $*.c $(CFLAGS)
+	$(CC) -g -c $*.c $(CFLAGS)
 
 clean:
 	rm -rf textviewer map pkgmanager wayland freetype-svg

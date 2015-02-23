@@ -421,7 +421,6 @@ wl_window_loop(Wl_Window *win)
                     break;
                 }
                 if (ep[i].events & EPOLLIN) {
-                    LOG("Read display");
                     if (wl_display_dispatch(win->display) < 0) {
                         perror("wl display dispatch failed: ");
                         break;

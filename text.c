@@ -27,6 +27,10 @@
 #include "text.h"
 #include "nemolist.h"
 
+#define EPSILON 0.001
+#define ROUND(a)
+#define EQUAL(a, b) ((a >b) ? ((a-b) < EPSILON) : ((b-a) < EPSILON))
+
 typedef struct _File_Map File_Map;
 struct _File_Map {
     char *data;
@@ -39,13 +43,13 @@ struct _Font {
     // font config proerties
     char *filepath;
     int idx;
-    char *family;
-    char *style;
-    int slant;
-    int weight;
-    int spacing;
-    int width;
-    double size; // pixel size
+    char *font_family;
+    char *font_style;
+    unsigned int font_slant;
+    unsigned int font_weight;
+    unsigned int font_spacing;
+    unsigned int font_width;
+    unsigned int font_size; // pixel size
 
     unsigned int upem;
 
@@ -95,13 +99,38 @@ struct _Cairo_Text {
 
 struct _Text
 {
+    // Harbufbuzz
+    hb_buffer_t *hb_buffer;
     char *utf8;
     unsigned int utf8_len;
+    hb_direction_t hb_dir;
+    hb_script_t hb_script;
+    hb_language_t hb_lang;
+    int hb_features_num;
+    hb_feature_t *hb_features;
+    Font *font;
 
-    bool vertical;
-    bool backward;
+    // CSS property
+    double anchor;  // start:0, middle:0.5, 1.0:end
+    int fill_r, fill_g, fill_b, fill_a; // if fill_a is 0, this will not be applied
+    int stroke_r, stroke_g, stroke_b, stroke_a; // if stroke_a is 0, this will not be applied
+    double stroke_width;
+    int letter_spacing;
+    int word_spacing;
+    unsigned int decoration;
+
+    // fontconfig property
+    char *font_family;
+    char *font_style;
+    int font_size;   // pixel size;
+    int font_slant;
+    int font_weight;
+    int font_width;
+    int font_spacing;
 
     // Drawing Texts
+    bool ellipsis;
+    int wrap;
     int line_num;
     double line_space;
     double width, height;
@@ -418,7 +447,7 @@ _font_ft_create(const char *file, unsigned int idx)
 
 // if backend is 1, it's freetype, else opentype
 static hb_font_t *
-_font_hb_create(const char *file, unsigned int idx, int backend)
+_font_hb_create(const char *file, unsigned int idx)
 {
     File_Map *map = NULL;
     hb_blob_t *blob;
@@ -450,14 +479,9 @@ _font_hb_create(const char *file, unsigned int idx, int backend)
 
     hb_font_set_scale(font, upem, upem);
 
-    if (backend == 1)
-        hb_ft_font_set_funcs(font);
-    else
-        hb_ot_font_set_funcs(font);
-
-#if 0 // Custom backend, not used yet.
-    hb_font_set_funcs(font2, func, NULL, NULL);
-#endif
+    hb_ft_font_set_funcs(font);
+    // FIXME: glyph poses (offset, advance) is not correct for old version (below than 0.3.38)!!!
+    //hb_ot_font_set_funcs(font);
     return font;
 }
 
@@ -520,9 +544,10 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
 }
 
 static Font *
-_font_create(const char *filepath, unsigned int idx, const char *family, const char *style, int slant, int weight, int spacing, int width, double size)
-{
-    RET_IF(!filepath || !family || !style, NULL);
+_font_create(const char *filepath, unsigned int idx, const char *font_family, const char *font_style, unsigned int font_slant, unsigned int font_weight, unsigned int font_spacing, unsigned int font_width, unsigned int font_size)
+
+ {
+    RET_IF(!filepath || !font_family || !font_style, NULL);
     RET_IF(!_file_exist(filepath), NULL);
 
     Font *font;
@@ -535,7 +560,7 @@ _font_create(const char *filepath, unsigned int idx, const char *family, const c
 
     unsigned int upem;
 
-    hb_font = _font_hb_create(filepath, idx, 0);
+    hb_font = _font_hb_create(filepath, idx);
     if (!hb_font) return NULL;
 
     // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
@@ -546,20 +571,20 @@ _font_create(const char *filepath, unsigned int idx, const char *family, const c
     ft_face = _font_ft_create(filepath, 0);
     if (!ft_face) return NULL;
 
-    cairo_font = _font_cairo_scaled_create(filepath, size, upem);
+    cairo_font = _font_cairo_scaled_create(filepath, font_size, upem);
     cairo_font_extents_t extents;
     cairo_scaled_font_extents(cairo_font, &extents);
 
     font = (Font *)calloc(sizeof(Font), 1);
     font->filepath = strdup(filepath);
     font->idx = idx;
-    font->family = strdup(family);
-    font->style = strdup(style);
-    font->slant = slant;
-    font->weight = weight;
-    font->spacing = spacing;
-    font->width = width;
-    font->size = size;
+    font->font_family = strdup(font_family);
+    font->font_style = strdup(font_style);
+    font->font_slant = font_slant;
+    font->font_weight = font_weight;
+    font->font_spacing = font_spacing;
+    font->font_width = font_width;
+    font->font_size = font_size;
     font->upem = upem;
     font->hb_font = hb_font;
     font->shapers = NULL;  //e.g. {"ot", "fallback", "graphite2", "coretext_aat"}
@@ -567,7 +592,7 @@ _font_create(const char *filepath, unsigned int idx, const char *family, const c
     font->cairo_font = cairo_font;
     // Scale will be used to multiply master outline coordinates to produce
     // pixel distances on a device.
-    font->cairo_scale = size / ft_face->max_advance_height;
+    font->cairo_scale = (double)font_size / ft_face->max_advance_height;
 
     font->height = extents.height;
     font->max_width = extents.max_x_advance;
@@ -575,14 +600,14 @@ _font_create(const char *filepath, unsigned int idx, const char *family, const c
     return font;
 }
 
-// family: e.g. NULL, "LiberationMono", "Times New Roman", "Arial", etc.
-// style: e.g. NULL, "Regular"(Normal), "Bold", "Italic", "Bold Italic", etc.
-// slant: e.g. FC_SLANT_ROMAN, FC_SLANT_ITALIC, etc.
-// weight: e.g. FC_WEIGHT_LIGHT, FC_WEIGHT_REGULAR, FC_WEIGHT_BOLD, etc.
-// width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
-// spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
+// font_family: e.g. NULL, "LiberationMono", "Times New Roman", "Arial", etc.
+// font_style: e.g. NULL, "Regular"(Normal), "Bold", "Italic", "Bold Italic", etc.
+// font_slant: e.g. FC_SLANT_ROMAN, FC_SLANT_ITALIC, etc.
+// font_weight: e.g. FC_WEIGHT_LIGHT, FC_WEIGHT_REGULAR, FC_WEIGHT_BOLD, etc.
+// font_width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
+// font_spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
 Font *
-_font_load(const char *family, const char *style, int size, int slant, int weight, int width, int spacing)
+_font_load(const char *font_family, const char *font_style, int font_size, int font_slant, int font_weight, int font_width, int font_spacing)
 {
     Font *font = NULL, *temp;
     FcBool ret;
@@ -591,14 +616,14 @@ _font_load(const char *family, const char *style, int size, int slant, int weigh
 
     if (!_font_config) return NULL;
 
-    // Find from already inserted font list
+    // CACHE PUSH: Find from already inserted font list
     nemolist_for_each(temp, &_font_list, link) {
-        if ((family && !strcmp(temp->family, family)) &&
-            (style && !strcmp(temp->style, style)) &&
-            (temp->slant == slant) &&
-            (temp->weight == weight) &&
-            (temp->width == width) &&
-            (temp->spacing == spacing)) {
+        if ((font_family && !strcmp(temp->font_family, font_family)) &&
+            (font_style && !strcmp(temp->font_style, font_style)) &&
+            (temp->font_slant == font_slant) &&
+            (temp->font_weight == font_weight) &&
+            (temp->font_width == font_width) &&
+            (temp->font_spacing == font_spacing)) {
             return temp;
         }
     }
@@ -608,12 +633,12 @@ _font_load(const char *family, const char *style, int size, int slant, int weigh
         ERR("FcPatternBuild");
         return NULL;
     }
-    if (family) FcPatternAddString(pattern, FC_FAMILY, (unsigned char *)family);
-    if (style) FcPatternAddString(pattern, FC_STYLE, (unsigned char *)style);
-    if (slant >= 0)  FcPatternAddInteger(pattern, FC_SLANT, slant);
-    if (weight >= 0)  FcPatternAddInteger(pattern, FC_WEIGHT, weight);
-    if (width >= 0)  FcPatternAddInteger(pattern, FC_SPACING, spacing);
-    if (spacing >= 0)  FcPatternAddInteger(pattern, FC_WIDTH, width);
+    if (font_family) FcPatternAddString(pattern, FC_FAMILY, (unsigned char *)font_family);
+    if (font_style) FcPatternAddString(pattern, FC_STYLE, (unsigned char *)font_style);
+    if (font_slant >= 0)  FcPatternAddInteger(pattern, FC_SLANT, font_slant);
+    if (font_weight >= 0)  FcPatternAddInteger(pattern, FC_WEIGHT, font_weight);
+    if (font_width >= 0)  FcPatternAddInteger(pattern, FC_WIDTH, font_width);
+    if (font_spacing >= 0)  FcPatternAddInteger(pattern, FC_SPACING, font_spacing);
 
     FcConfigSubstitute(_font_config, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
@@ -656,7 +681,8 @@ _font_load(const char *family, const char *style, int size, int slant, int weigh
         return NULL;
     }
 
-    // Search already inserted list
+    ERR("%s", filepath);
+    // CACHE POP: Search already inserted list
     nemolist_for_each(temp, &_font_list, link) {
         if (!strcmp(temp->filepath, (char *)filepath)) {
             FcFontSetDestroy(set);
@@ -672,9 +698,10 @@ _font_load(const char *family, const char *style, int size, int slant, int weigh
     FcPatternGetInteger(set->fonts[0], FC_WEIGHT, 0, &_weight);
     FcPatternGetInteger(set->fonts[0], FC_SPACING, 0, &_spacing);
     FcPatternGetInteger(set->fonts[0], FC_WIDTH, 0, &_width);
+    if (font_size <= 0) font_size = 9;  // default font size
 
     font = _font_create((char *)filepath, 0, (char *)_family, (char *)_style,
-            _slant, _weight, _spacing, _width, size);
+            _slant, _weight, _spacing, _width, font_size);
     if (font) nemolist_insert_tail(&_font_list, &font->link);
     FcFontSetDestroy(set);
 
@@ -704,7 +731,7 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     unsigned int num_clusters = 0;
     cairo_text_cluster_t *clusters = NULL;
     cairo_text_cluster_flags_t cluster_flags = 0;
-    int i = 0;
+    unsigned int i = 0;
     unsigned int j;
 
     RET_IF(!font || !hb_buffer || !utf8, NULL);
@@ -732,9 +759,11 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     for (i = 0, j = from ; i < num_glyphs ; i++, j++) {
         glyphs[i].index = hb_glyphs[j].codepoint;
         glyphs[i].x =  (hb_glyph_poses[j].x_offset + x) * font->cairo_scale;
-        glyphs[i].y = -(hb_glyph_poses[j].y_offset + y) * font->cairo_scale;
-        x += hb_glyph_poses[j].x_advance;
-        y += hb_glyph_poses[j].y_advance;
+        glyphs[i].y = (-hb_glyph_poses[j].y_offset + y) * font->cairo_scale;
+        x +=  hb_glyph_poses[j].x_advance;
+        y += -hb_glyph_poses[j].y_advance;
+        //LOG("[%d] %d, %d", j, hb_glyph_poses[j].x_offset, hb_glyph_poses[j].x_advance);
+        //LOG("[%d] %d, %d", j, hb_glyph_poses[j].y_offset, hb_glyph_poses[j].y_advance);
     }
     glyphs[i].index = -1;
     glyphs[i].x = x * font->cairo_scale;
@@ -768,10 +797,7 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
         clusters[cluster].num_glyphs++;
 
         if (backward) {
-            // FIXME: backward tests!!!
-            ERR("backward is not tested yet!!");
-            abort();
-            for (i = num_glyphs - 2; i >= 0; i--) {
+            for (i = num_glyphs - 2; i ; i--) {
                 if (hb_glyphs[i].cluster != hb_glyphs[i+1].cluster) {
                     if (hb_glyphs[i].cluster >= hb_glyphs[i+1].cluster) {
                         ERR("cluster index is not correct");
@@ -808,7 +834,7 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
 
     Cairo_Text *ct = (Cairo_Text *)calloc(sizeof(Cairo_Text), 1);
     //ct->width = glyphs[i].x ;
-    //ct->height = font->size;
+    //ct->height = font->font_size;
     ct->num_glyphs = num_glyphs;
     ct->glyphs = glyphs;
     ct->num_clusters = num_clusters;
@@ -819,38 +845,41 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     return ct;
 }
 
-// if return -1, no glyph can be exist within given width.
+// if return -1, no glyph can be exist within given size.
 static int
-_text_hb_get_idx_within_width(hb_buffer_t *buffer, unsigned int start, double width, double scale)
+_text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
+        int wrap, unsigned int start, double size, double *ret_size)
 {
     RET_IF(!buffer, -1);
     RET_IF(start < 0, -1);
 
     unsigned int num_glyphs;
     hb_glyph_position_t *glyph_poses;
-    double w = 0, prev_w = 0;
+    double sz = 0, prev_sz = 0;
     unsigned int i = 0;
 
     glyph_poses = hb_buffer_get_glyph_positions(buffer, &num_glyphs);
     if (!glyph_poses) return 0;
 
     for (i = start; i < num_glyphs ; i++) {
-        w += ((glyph_poses[i].x_offset + glyph_poses[i].x_advance) * scale);
-        if (w >= width) break;
-        prev_w = w;
+        if (vertical)
+            sz -= glyph_poses[i].y_advance * scale;
+        else
+            sz += glyph_poses[i].x_advance * scale;
+        if (sz >= size) break;
+        prev_sz = sz;
     }
 
+    if (ret_size) *ret_size = prev_sz;
     return i - 1;
 }
 
 static hb_buffer_t *
 _text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len,
-        const char *dir, const char *script, const char *lang,
-        const char *features, const char **hb_shapers, hb_font_t *hb_font)
+        hb_direction_t hb_dir, hb_script_t hb_script, hb_language_t hb_lang,
+        unsigned int hb_features_num, hb_feature_t *hb_features, hb_font_t *hb_font)
 {
     hb_buffer_t *hb_buffer;
-    hb_feature_t *hb_features = NULL;
-    unsigned int num_features = 0;
 
     RET_IF(!utf8 || utf8_len <= 0 || !hb_font, NULL);
 
@@ -866,108 +895,54 @@ _text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len
     // Each utf8 char is mapped into each glyph's unicode. (e.g. 한(ED 95 9C) => U+D55C)
     hb_buffer_add_utf8(hb_buffer, utf8, utf8_len, 0, utf8_len);
 
-    if (dir) { // "LTR" (Left to Right), "RTL", "TTB", 'BTT", and lower case
-        hb_direction_t hb_dir = hb_direction_from_string(dir, -1);
-        hb_buffer_set_direction(hb_buffer, hb_dir);
-    }
-    if (script) { // ISO=15024 tag
-        // "latn" (LATIN), "hang" (HANGUL), "Hira" (HIRAGANA), "Kana" (KATAKANA)
-        // "Deva" (DEVANAGARI (Hindi language)), "Arab" (ARABIC), "Hebr" (HEBREW)
-        hb_script_t hb_script = hb_script_from_string(script, -1);
-        hb_buffer_set_script(hb_buffer, hb_script);
-    }
-    if (lang) {
-        //LANG = getenv("LANG");
-        hb_language_t hb_lang = hb_language_from_string(lang, -1);
-        hb_buffer_set_language(hb_buffer, hb_lang);
+    unsigned int num_glyphs = hb_buffer_get_length(hb_buffer);
+    // Use unicode index instead of utf8 index
+    hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(hb_buffer, NULL);
+    for (unsigned int i = 0 ; i < num_glyphs ; i++) {
+        infos->cluster = i;
+        infos++;
     }
 
+    hb_buffer_set_direction(hb_buffer, hb_dir);
+    hb_buffer_set_script(hb_buffer, hb_script);
+    hb_buffer_set_language(hb_buffer, hb_lang);
     hb_buffer_flags_t hb_flags = HB_BUFFER_FLAG_DEFAULT;
-    // HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT | HB_BUFFER_FLAG_PRESERVE_DEFAULT_IGNORABLES;
+    //HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT | HB_BUFFER_FLAG_PRESERVE_DEFAULT_IGNORABLES;
     hb_buffer_set_flags(hb_buffer, hb_flags);
 
-    // Default hb_buffer property setup (i.e. script assumption if script is unset)
     hb_buffer_guess_segment_properties(hb_buffer);
-    // *********** Buffer End ***********//
-
-    if (features) { // i.e. "kern,aalt=2"
-        // CSS  font-feature-setting (except 'normal', 'inherited')
-        // e.g. kern, kern=0, +kern, -kern, kern[3:5], kern[3], aalt=2
-#if 0 // strtok version with realloc
-        char *tok;
-        char *org = strdup(features);
-        while ((tok = strtok(org, ","))) {
-            printf("tok: %s\n", tok);
-            num_features++;
-            hb_features = (hb_feature_t *)realloc(hb_features, sizeof(hb_feature_t) * num_features);
-            if (!hb_feature_from_string(tok, strlen(tok), &hb_features[num_features -1])) {
-                ERR("hb feature from string failed");
-            }
-            org = NULL;
-        }
-        free(org);
-#else
-        const char *start, *p;
-
-        num_features++;
-        p = features;
-        while (p && *p) {
-            if (*p == ',') num_features++;
-            p++;
-        }
-        hb_features = (hb_feature_t *)malloc(sizeof(hb_feature_t) * num_features);
-
-        unsigned int idx = 0;
-        start = p = features;
-        while (p) {
-            if (*p == ',' || !*p) {
-                hb_feature_from_string(start, p - start, &hb_features[idx]);
-                if (!*p) break;
-                start = p + 1;
-                idx++;
-            }
-            p++;
-        }
-#endif
-    }
-
-#if 0// Get current available shaper list
-    //e.g. "ot", "fallback", "graphite2", "coretext_aat", etc.
-    const char **list = hb_shape_list_shapers();
-    LOG("Available shapers: ");
-    while (list && *list) {
-        LOG("%s, ", *list);
-        list++;
-    }
-    LOG("\n");
-#endif
 
     // Shape buffer data by using buffer, features, shapers, etc..
     // Each glyph's unicode is mapped into glyph's codepoint. (e.g. U+D55C => CE0)
-    if (!hb_shape_full(hb_font, hb_buffer, hb_features, num_features, hb_shapers)) {
+    if (!hb_shape_full(hb_font, hb_buffer, hb_features, hb_features_num, NULL)) {
         hb_buffer_set_length(hb_buffer, 0);
         ERR("hb shape full failed");
-        if (hb_features) free(hb_features);
         hb_buffer_destroy(hb_buffer);
         return NULL;
     }
-    if (hb_features) free(hb_features);
 
     // It can be used for cluster, seems to not be necessary for single cluster
-    // hb_buffer_normalize_glyphs(hb_buffer);
+    //hb_buffer_normalize_glyphs(hb_buffer);
     return hb_buffer;
 }
 
 void
-_text_destroy(Text *text)
+_text_destroy(Text *t)
 {
-    RET_IF(!text);
-    free(text->utf8);
-    for (unsigned int i = 0 ; i < text->line_num ; i++) {
-        _text_cairo_destroy((text->cairo_texts)[i]);
+    RET_IF(!t);
+
+    hb_buffer_destroy(t->hb_buffer);
+    free(t->utf8);
+    if (t->hb_features) free(t->hb_features);
+
+    if (t->font_family) free(t->font_family);
+    if (t->font_style) free(t->font_style);
+
+    for (unsigned int i = 0 ; i < t->line_num ; i++) {
+        _text_cairo_destroy((t->cairo_texts)[i]);
     }
-    free(text->cairo_texts);
-    free(text);
+    free(t->cairo_texts);
+    free(t);
 }
 
 static void
@@ -999,26 +974,10 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
     *_str_len = str_len;
 }
 
-void
-_text_get_size(Text *txt, double *w, double *h)
-{
-    RET_IF(!txt);
-    if (w) *w = txt->width;
-    if (h) *h = txt->height;
-}
-
-void
-_text_get_direction(Text *txt, bool *vertical, bool *backward)
-{
-    RET_IF(!txt);
-    if (vertical) *vertical = txt->vertical;
-    if (backward) *backward = txt->backward;
-}
-
 // You can restrict width and maximum number of line and set ellipsis.
 // if width or line is below or equal to 0, it's useless)
 Text *
-_text_create(Font *font, const char *utf8,
+_text_create_all(Font *font, const char *utf8,
         const char *dir, const char *script, const char *lang, const char *features,
         double line_space,
         double width, unsigned int line_num, bool ellipsis)
@@ -1061,7 +1020,49 @@ _text_create(Font *font, const char *utf8,
     str_len = utf8_len;
 #endif
 
-    hb_buffer = _text_hb_create(NULL, str, str_len, dir, script, lang, features, font->shapers, font->hb_font);
+    hb_direction_t hb_dir = HB_DIRECTION_INVALID;
+    hb_script_t hb_script = HB_SCRIPT_INVALID;
+    hb_language_t hb_lang = HB_LANGUAGE_INVALID;
+    hb_feature_t *hb_features = NULL;
+
+    if (dir) { // "LTR" (Left to Right), "RTL", "TTB", 'BTT", and lower case
+        hb_dir = hb_direction_from_string(dir, -1);
+    }
+    if (script) { // ISO=15024 tag "latn" (LATIN), "hang" (HANGUL), "Hira" (HIRAGANA), "Kana" (KATAKANA), etc.
+        hb_script = hb_script_from_string(script, -1);
+    }
+    if (lang) { // ko, en, etc.
+        hb_lang = hb_language_from_string(lang, -1);
+    }
+    unsigned int hb_features_num = 0;
+    if (features) { // i.e. "kern,aalt=2"
+        // CSS  font-feature-setting (except 'normal', 'inherited')
+        // e.g. kern, kern=0, +kern, -kern, kern[3:5], kern[3], aalt=2
+        const char *start, *p;
+
+        hb_features_num++;
+        p = features;
+        while (p && *p) {
+            if (*p == ',') hb_features_num++;
+            p++;
+        }
+        hb_features = (hb_feature_t *)malloc(sizeof(hb_feature_t) * hb_features_num);
+
+        unsigned int idx = 0;
+        start = p = features;
+        while (p) {
+            if (*p == ',' || !*p) {
+                hb_feature_from_string(start, p - start, &hb_features[idx]);
+                if (!*p) break;
+                start = p + 1;
+                idx++;
+            }
+            p++;
+        }
+    }
+
+    hb_buffer = _text_hb_create(NULL, str, str_len, hb_dir, hb_script, hb_lang,
+            hb_features_num, hb_features, font->hb_font);
     num_glyphs = hb_buffer_get_length(hb_buffer);
 
     if (line_num <= 0) { // line num is not specified
@@ -1103,20 +1104,20 @@ _text_create(Font *font, const char *utf8,
         _str_ellipsis_append(&str, &str_len, i);
         // shaping again with ellipsis
         hb_buffer = _text_hb_create(hb_buffer, str, str_len,
-                dir, script, lang, features, font->shapers, font->hb_font);
+                hb_dir, hb_script, hb_lang, hb_features_num, hb_features, font->hb_font);
         num_glyphs = hb_buffer_get_length(hb_buffer);
     }
 
     cairo_texts = (Cairo_Text **)malloc(sizeof(Cairo_Text *) * line_num);
 
     if ((line_num == 1) && (i <= num_glyphs)) {// if exact single line
-        // FIXME: This should be here because  _text_hb_get_idx_within_width()
+        // FIXME: This should be here because  _text_hb_get_idx_within()
         // function cannot solve double precison for width.
         cairo_texts[0] = _text_cairo_create(font, hb_buffer, str, str_len, 0, i, true);
     } else {
         unsigned int from = 0, to;
         for (unsigned int i = 0 ; i < line_num ; i++) {
-            to = _text_hb_get_idx_within_width(hb_buffer, from, width, font->cairo_scale);
+            to = _text_hb_get_idx_within(hb_buffer, false, font->cairo_scale, 1, from, width, NULL);
             cairo_texts[i] = _text_cairo_create(font, hb_buffer, str, str_len, from, to, false);
             from = to + 1;
         }
@@ -1125,8 +1126,7 @@ _text_create(Font *font, const char *utf8,
     text = (Text *)malloc(sizeof(Text));
     text->utf8 = str;
     text->utf8_len = str_len;
-    text->vertical = HB_DIRECTION_IS_VERTICAL(hb_buffer_get_direction(hb_buffer));
-    text->backward = HB_DIRECTION_IS_BACKWARD(hb_buffer_get_direction(hb_buffer));
+    text->hb_dir = hb_dir;
     text->line_num = line_num;
     text->line_space = line_space;
     text->width = width;
@@ -1138,36 +1138,40 @@ _text_create(Font *font, const char *utf8,
 }
 
 void
-_text_draw_cairo(cairo_t *cr, Font *font, Text *text)
+_text_draw_cairo(cairo_t *cr, Text *t)
 {
+    Font *font = t->font;
     cairo_save(cr);
+
+    // Rescale normalized font
+    cairo_scale(cr, t->font_size, t->font_size);
 
     cairo_set_scaled_font(cr, font->cairo_font);
 
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
 
-    double descent;
 
-    if (text->vertical) {
-        descent = font_extents.height * (text->line_num + .5);
+    if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
+        double descent = font_extents.height * (t->line_num + .5);
         cairo_translate (cr, descent, 0);
     } else {
-        descent = font_extents.descent;
+        double descent = font_extents.descent;
         cairo_translate (cr, 0, -descent);
     }
 
-    Cairo_Text **cts = text->cairo_texts;
+    Cairo_Text **cts = t->cairo_texts;
 
-    for (unsigned int i = 0 ; i < text->line_num ; i++) {
+    LOG("%lf %lf %lf", font_extents.height, font_extents.max_x_advance, font_extents.max_y_advance);
+    for (unsigned int i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = cts[i];
 
-        if (text->vertical) {
-            if (i) cairo_translate (cr, -text->line_space, 0);
+        if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
+            if (i) cairo_translate (cr, -t->line_space, 0);
             cairo_translate (cr, -font_extents.height, 0);
         }
         else {
-            if (i) cairo_translate (cr, 0, text->line_space);
+            if (i) cairo_translate (cr, 0, t->line_space);
             cairo_translate (cr, 0, font_extents.height);
         }
 
@@ -1188,25 +1192,27 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
             cairo_restore (cr);
         }
 
-        if (1) { // Cairo render/draw text itsef
-            if (1) {        // redner text
-                cairo_show_text(cr, text->utf8);
-            } else if (0) { // draw path
+        if (0) { // Cairo render/draw text itsef
+            if (0) {        // redner text
+                cairo_show_text(cr, t->utf8);
+            } else if (1) { // draw path
                 cairo_move_to(cr, 0, 0);
-                cairo_text_path(cr, text->utf8);
+                cairo_rotate(cr, 45);
+                cairo_text_path(cr, t->utf8);
                 cairo_fill (cr);
             }
         } else { // Cairo render/draw by using given glyph or clusers
-            if (ct->num_clusters) { // render text by using glyph and clusters
+            if (0) { //(ct->num_clusters) { // render text by using glyph and clusters
                 cairo_show_text_glyphs (cr,
                         NULL, 0,
                         ct->glyphs, ct->num_glyphs,
                         ct->clusters, ct->num_clusters,
                         ct->cluster_flags);
-            } else if (0) {         // render text by using glyph
+            } else if (1) {         // render text by using glyph
                 cairo_show_glyphs (cr, ct->glyphs, ct->num_glyphs);
             } else {                // draw path by using glyph
-                cairo_move_to(cr, 0, 0);
+                //cairo_move_to(cr, 0, 0);
+                //cairo_rotate(cr, 45);
                 /* This should be image suface */
                 /* cairo_show_glyphs() doesn't support subpixel positioning */
                 cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
@@ -1218,7 +1224,642 @@ _text_draw_cairo(cairo_t *cr, Font *font, Text *text)
     cairo_restore (cr);
 }
 
+Text *
+_text_create(const char *utf8)
+{
+    RET_IF(!utf8, NULL);
 
+    unsigned int utf8_len;
+    utf8_len = strlen(utf8);
+    if (!utf8_len) {
+        ERR("utfh length is 0");
+        return NULL;
+    }
+
+    char *str;
+    unsigned int str_len = 0;
+    str = (char *)malloc(sizeof(char) * utf8_len);
+    // Remove special characters (e.g. line feed, backspace, etc.)
+    for (unsigned int i = 0 ; i < utf8_len ; i++) {
+        if (utf8[i] >> 31 ||
+            (utf8[i] > 0x1F)) { // If it is valid character
+            str[str_len] = utf8[i];
+            str_len++;
+        }
+    }
+    if (!str || str_len <=0 ) return NULL;
+    str = (char *)realloc(str, sizeof(char) * (str_len + 1));
+    str[str_len] = '\0';
+
+    Text *t = (Text *)calloc(sizeof(Text), 1);
+    t->utf8 = str;
+    t->utf8_len = str_len;
+    t->hb_dir = HB_DIRECTION_INVALID;
+    t->hb_script = HB_SCRIPT_INVALID;
+    t->hb_lang = HB_LANGUAGE_INVALID;
+    t->font_size = -1;
+    t->font_slant = -1;
+    t->font_weight = -1;
+    t->font_width = -1;
+    t->font_spacing = -1;
+
+    return t;
+}
+
+static void
+_text_calc(Text *t)
+{
+}
+
+void
+_text_draw(Text *t, cairo_t *cr)
+{
+    RET_IF(!t);
+    RET_IF(!t->utf8);
+    RET_IF(!t->utf8_len);
+
+    // font size adjustment
+    if (t->font_size <= 0) t->font_size = 9;
+    if (t->height && (t->font_size > t->height)) t->font_size = t->height;
+    if (t->width && (t->font_size > t->width))   t->font_size = t->width;
+
+    unsigned int num_glyphs = 0;
+    // Use normalized font size as 1
+    t->font = _font_load(t->font_family, t->font_style, 1, t->font_slant, t->font_weight, t->font_width, t->font_spacing);
+
+    // FIXME: Use cache for hb_buffer if possible
+    t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len, t->hb_dir, t->hb_script, t->hb_lang, t->hb_features_num, t->hb_features, t->font->hb_font);
+    num_glyphs = hb_buffer_get_length(t->hb_buffer);
+
+
+    double maxw, maxh, toth = 0;
+    bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
+    if (vertical) {
+        if (t->height) maxw = t->height;
+        else maxw = 1410065407;
+        if (t->width) maxh = t->width;
+        else maxh = 1410065407;
+    } else {
+        if (t->width) maxw = t->width;
+        else maxw = 1410065407;
+        if (t->height) maxh = t->height;
+        else maxh = 1410065407;
+    }
+
+    int line_num = 1;
+    double w = 0, h = 0;
+    int from = 0, to = 0;
+
+    while (1) {
+        double size;
+        double scale = t->font->cairo_scale * t->font_size;
+        to = _text_hb_get_idx_within(t->hb_buffer, vertical, scale, t->wrap, from, maxw, &size);
+        t->cairo_texts = realloc(t->cairo_texts, sizeof(Cairo_Text *) * line_num);
+        t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
+                t->utf8, t->utf8_len, from, to, false);
+        if (line_num == 1) {
+            w = size;
+        } else {
+            w = maxw;
+        }
+        h = line_num * t->font_size;
+        toth += h;
+
+        if (to >= (num_glyphs - 1)) {
+            //LOG("end of glyph");
+            break;
+        }
+
+        if (toth > maxh || EQUAL(toth, maxh)) { // double comparison
+            //LOG("exceed height");
+            if (!t->ellipsis) {
+                t->font_size -= 1; // FIXME performance issue!!
+                continue;
+            }
+            break;
+        }
+        if (!t->wrap) {
+            //LOG("No wrap");
+            if (!t->ellipsis) {
+                t->font_size -= 1; // FIXME performance issue!!
+                continue;
+            }
+            w = size;
+            h = line_num * t->font_size;
+            break;
+        }
+        from = to + 1;
+        line_num++;
+    }
+    if (t->ellipsis && (to < (num_glyphs -1))) {
+        // FIXME: ellipsis is too long than last glyph width!!!!
+        _str_ellipsis_append(&(t->utf8), &(t->utf8_len), to);
+        // shaping again with ellipsis
+        t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len,
+                t->hb_dir, t->hb_script, t->hb_lang, t->hb_features_num,
+                t->hb_features, t->font->hb_font);
+        num_glyphs = hb_buffer_get_length(t->hb_buffer);
+        _text_cairo_destroy(t->cairo_texts[line_num-1]);
+        t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
+                t->utf8, t->utf8_len, from, to, false);
+    }
+    if (vertical) {
+        t->width = h;
+        t->height = w;
+    } else {
+        t->width = w;
+        t->height = h;
+    }
+    t->line_num = line_num;
+    //LOG("w:%lf h:%lf line_num:%d, font_size: %d", t->width, t->height, t->line_num, t->font_size);
+
+    _text_draw_cairo(cr, t);
+}
+
+static void
+_text_dirty(Text *t)
+{
+    RET_IF(!t);
+    if (!t->cairo_texts) return;
+    for (unsigned int i = 0 ; i < t->line_num ; i++) {
+        _text_cairo_destroy(t->cairo_texts[i]);
+    }
+    t->cairo_texts = NULL;
+}
+
+// e.g. "LiberationMono", "Times New Roman", "Arial", etc.
+bool
+_text_set_font_family(Text *t, const char *font_family)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (t->font_family) free(t->font_family);
+
+    if (font_family) t->font_family = strdup(font_family);
+    else        t->font_family = NULL;
+    return true;
+}
+
+const char *
+_text_get_font_family(Text *t)
+{
+    RET_IF(!t, NULL);
+    _text_dirty(t);
+    return t->font_family;
+}
+
+// e.g. "Regular"(or "Normal"), "Bold", "Italic", "Bold Italic", etc.
+bool
+_text_set_font_style(Text *t, const char *font_style)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (t->font_style) free(t->font_style);
+
+    if (font_style) t->font_style = strdup(font_style);
+    else       t->font_style = NULL;
+    return true;
+}
+
+const char *
+_text_get_font_style(Text *t)
+{
+    RET_IF(!t, NULL);
+    return t->font_style;
+}
+
+// -1 is unset
+bool
+_text_set_font_size(Text *t, int font_size)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->font_size = font_size;
+    return true;
+}
+
+unsigned int
+_text_get_font_size(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->font_size;
+}
+
+// font_slant: e.g. FC_SLANT_ROMAN, FC_SLANT_ITALIC, etc.
+// -1 is unset
+bool
+_text_set_font_slant(Text *t, int font_slant)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->font_slant = font_slant;
+    return true;
+}
+
+int
+_text_get_font_slant(Text *t)
+{
+    RET_IF(!t, -1);
+    return t->font_slant;
+}
+
+// font_weight: e.g. FC_WEIGHT_LIGHT, FC_WEIGHT_REGULAR, FC_WEIGHT_BOLD, etc.
+// -1 is unset
+bool
+_text_set_font_weight(Text *t, int font_weight)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->font_weight = font_weight;
+    return true;
+}
+
+int
+_text_get_font_weight(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->font_weight;
+}
+
+// width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
+// -1 is unset
+bool
+_text_set_font_width(Text *t, int font_width)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->font_width = font_width;
+    return true;
+}
+
+unsigned int
+_text_get_font_width(Text *t)
+{
+    RET_IF(!t, -1);
+    return t->font_width;
+}
+
+// spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
+// -1 is unset
+bool
+_text_set_font_spacing(Text *t, int font_spacing)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->font_spacing = font_spacing;
+    return true;
+}
+
+int
+_text_get_font_spacing(Text *t)
+{
+    RET_IF(!t, -1);
+    return t->font_spacing;
+}
+
+bool
+_text_set_direction(Text *t, bool vertical, bool backward)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (vertical) {
+        if (backward)   t->hb_dir = HB_DIRECTION_BTT;
+        else            t->hb_dir = HB_DIRECTION_TTB;
+    } else {
+        if (backward)   t->hb_dir = HB_DIRECTION_RTL;
+        else            t->hb_dir = HB_DIRECTION_LTR;
+    }
+    return true;
+}
+
+void
+_text_get_direction(Text *t, bool *vertical, bool *backward)
+{
+    RET_IF(!t);
+    if (t->hb_dir == HB_DIRECTION_BTT) {
+        if (vertical) *vertical = true;
+        if (backward) *backward = true;
+    } else if (t->hb_dir == HB_DIRECTION_TTB) {
+        if (vertical) *vertical = true;
+        if (backward) *backward = false;
+    } else if (t->hb_dir == HB_DIRECTION_RTL) {
+        if (vertical) *vertical = false;
+        if (backward) *backward = true;
+    } else if (t->hb_dir == HB_DIRECTION_LTR) {
+        if (vertical) *vertical = false;
+        if (backward) *backward = false;
+    }
+}
+
+// ISO=15024 tag
+// "latn" (LATIN), "hang" (HANGUL), "Hira" (HIRAGANA), "Kana" (KATAKANA)
+// "Deva" (DEVANAGARI (Hindi language)), "Arab" (ARABIC), "Hebr" (HEBREW), etc.
+bool
+_text_set_script(Text *t, const char *script)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (script) t->hb_script = hb_script_from_string(script, -1);
+    else        t->hb_script = HB_SCRIPT_INVALID;
+    return true;
+}
+
+char *
+_text_get_script(Text *t)
+{
+    RET_IF(!t, NULL);
+    return _strdup_printf("%c%c%c%c", t->hb_script >> 24, t->hb_script >> 16,
+            t->hb_script >> 8, t->hb_script);
+}
+
+// "C", "en", "ko", etc.
+bool
+_text_set_lang(Text *t, const char *lang)
+{
+    RET_IF(!t, false);
+    RET_IF(!lang, false);
+    _text_dirty(t);
+    //lang = getenv("LANG");
+    if (lang) t->hb_lang = hb_language_from_string(lang, -1);
+    else      t->hb_lang = HB_LANGUAGE_INVALID;
+    return true;
+}
+
+const char *
+_text_get_lang(Text *t)
+{
+    RET_IF(!t, NULL);
+    return hb_language_to_string(t->hb_lang);
+}
+
+// CSS  font-feature-setting (except 'normal', 'inherited')
+// Default Auto: When the font size is big, font kerning may look strange and it will be disabled.
+// --> plz, check harfubz really do that.
+bool
+_text_set_kerning(Text *t, bool kerning)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+
+    t->hb_features_num = 0;
+    if (t->hb_features) free(t->hb_features);
+    t->hb_features = NULL;
+
+    if (!kerning) {  // Turn off kerning
+        // Currently, I consider only one feature, kerning.
+        t->hb_features_num = 1;
+        t->hb_features = malloc(sizeof(hb_feature_t) * t->hb_features_num);
+        hb_feature_from_string("-kern", 5, &(t->hb_features[0]));
+    }
+    return true;
+
+}
+
+bool
+_text_get_kerning(Text *t)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (t->hb_features_num && t->hb_features) {
+        char buf[128];
+        hb_feature_to_string(&(t->hb_features[0]), buf, 127);
+        if (!strcmp(buf, "-kern") || !strcmp(buf, "kern=0")) return false;
+    }
+    return true;
+}
+
+// 0: start, 0.5: middle, 1.0: end
+bool
+_text_set_anchor(Text *t, double anchor)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (anchor < 0.) anchor = 0.;
+    if (anchor > 1.) anchor = 1.;
+    t->anchor = anchor;
+
+    return true;
+}
+
+double
+_text_get_anchor(Text *t)
+{
+    RET_IF(!t, 0.);
+    return t->anchor;
+}
+
+// If alpha is 0, unfill
+bool
+_text_set_fill_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+    if (a > 255) a = 255;
+    t->fill_r = r;
+    t->fill_g = g;
+    t->fill_b = b;
+    t->fill_a = a;
+
+    return true;
+}
+
+void
+_text_get_fill_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a)
+{
+    RET_IF(!t);
+    if (r) *r = t->fill_r;
+    if (g) *g = t->fill_g;
+    if (b) *b = t->fill_b;
+    if (a) *a = t->fill_a;
+}
+
+// If alpha is 0, unset storke
+bool
+_text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (r > 255) r = 255;
+    if (g > 255) g = 255;
+    if (b > 255) b = 255;
+    if (a > 255) a = 255;
+    t->stroke_r = r;
+    t->stroke_g = g;
+    t->stroke_b = b;
+    t->stroke_a = a;
+
+    return true;
+}
+
+void
+_text_get_stroke_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a)
+{
+    RET_IF(!t);
+    if (r) *r = t->stroke_r;
+    if (g) *g = t->stroke_g;
+    if (b) *b = t->stroke_b;
+    if (a) *a = t->stroke_a;
+}
+
+bool
+_text_set_stroke_width(Text *t, double w)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (w < 0.) w = 0.;
+    t->stroke_width = w;
+    return true;
+}
+
+double
+_text_get_stroke_width(Text *t)
+{
+    RET_IF(!t, 0.);
+    return t->stroke_width;
+}
+
+bool
+_text_set_letter_spacing(Text *t, int space)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->letter_spacing = space;
+    return true;
+}
+
+int
+_text_get_letter_spacing(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->letter_spacing;
+}
+
+bool
+_text_set_word_spacing(Text *t, int space)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->word_spacing = space;
+    return true;
+}
+
+int
+_text_get_word_spacing(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->word_spacing;
+}
+
+// None: 0, Underline:1, Overline: 2, Line-through: 3
+bool
+_text_set_decoratoin(Text *t, unsigned int decoration)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (decoration > 3) decoration = 3;
+    t->decoration = decoration;
+    return true;
+}
+
+unsigned int
+_text_get_decoration(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->decoration;
+}
+
+bool
+_text_set_ellipsis(Text *t, bool ellipsis)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->ellipsis = ellipsis;
+    return true;
+}
+
+bool
+_text_get_ellipsis(Text *t)
+{
+    RET_IF(!t, false);
+    return t->ellipsis;
+}
+
+// 0: None, 1: word wrap, 2: char warp
+bool
+_text_set_wrap(Text *t, int wrap)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->wrap = wrap;
+    return true;
+}
+
+int
+_text_get_wrap(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->wrap;
+}
+
+bool
+_text_set_width(Text *t, double width)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (width < 0) width = 0;
+    t->width = width;
+    return true;
+}
+
+double
+_text_get_width(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->width;
+}
+
+bool
+_text_set_height(Text *t, double height)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    if (height < 0) height = 0;
+    t->height = height;
+    return true;
+}
+
+double
+_text_get_height(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->height;
+}
+
+unsigned int
+_text_get_line_num(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->line_num;
+}
+
+bool
+_text_set_line_space(Text *t, double line_space)
+{
+    RET_IF(!t, false);
+    _text_dirty(t);
+    t->line_space = line_space;
+    return true;
+}
+
+double
+_text_get_line_space(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->line_space;
+}
 
 #if 0
 #include <iconv.h>
