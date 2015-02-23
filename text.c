@@ -129,6 +129,7 @@ struct _Text
     int font_spacing;
 
     // Drawing Texts
+    bool dirty;
     bool ellipsis;
     int wrap;
     int line_num;
@@ -875,7 +876,7 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
             sz += glyph_poses[i].x_advance * scale;
         prev_sz = sz;
         if (sz >= size) {
-            if (wrap && (last_space_idx >= 0)) {
+            if ((wrap == 1) && (last_space_idx >= 0)) {
                 i = last_space_idx + 1;
             }
             break;
@@ -992,7 +993,7 @@ _text_draw_cairo(cairo_t *cr, Text *t)
     Font *font = t->font;
     cairo_save(cr);
 
-    // Rescale normalized font
+    // Rescale up normalized font as font size
     cairo_scale(cr, t->font_size, t->font_size);
 
     cairo_set_scaled_font(cr, font->cairo_font);
@@ -1000,9 +1001,11 @@ _text_draw_cairo(cairo_t *cr, Text *t)
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
 
-
+    LOG("%lf + %lf = %lf", font_extents.ascent, font_extents.descent,
+            font_extents.height);
     if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
-        double descent = font_extents.height * (t->line_num + .5);
+        double descent = font_extents.height * (t->line_num + .5) +
+            ((t->line_num -1 ) * (t->line_space/t->font_size));
         cairo_translate (cr, descent, 0);
     } else {
         double descent = font_extents.descent;
@@ -1011,16 +1014,19 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     Cairo_Text **cts = t->cairo_texts;
 
-    LOG("%lf %lf %lf", font_extents.height, font_extents.max_x_advance, font_extents.max_y_advance);
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = cts[i];
 
         if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
-            if (i) cairo_translate (cr, -t->line_space, 0);
+            if (i)
+                cairo_translate (cr,
+                        -t->line_space/(double)t->font_size, 0);
             cairo_translate (cr, -font_extents.height, 0);
         }
         else {
-            if (i) cairo_translate (cr, 0, t->line_space);
+            if (i)
+                cairo_translate (cr, 0,
+                        t->line_space/(double)t->font_size);
             cairo_translate (cr, 0, font_extents.height);
         }
 
@@ -1037,37 +1043,51 @@ _text_draw_cairo(cairo_t *cr, Text *t)
                 cairo_rel_line_to (cr, 0, 0);
             }
             cairo_stroke (cr);
-
             cairo_restore (cr);
         }
 
-        if (0) { // Cairo render/draw text itsef
-            if (0) {        // redner text
+        /* Should be image surface*/
+        if (t->fill_a > 0) {
+            cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
+            cairo_set_source_rgba (cr,
+                    t->fill_r/255., t->fill_g/255.,
+                    t->fill_b/255., t->fill_a/255.);
+            cairo_fill (cr);
+        }
+        if (t->stroke_a > 0) {
+            cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
+            cairo_set_source_rgba (cr,
+                    t->stroke_r/255., t->stroke_g/255.,
+                    t->stroke_b/255., t->stroke_a/255.);
+            // stroke width can be scaled by cairo_scale().
+            // So scale down it.
+            cairo_set_line_width (cr,
+                    (1./t->font_size) * t->stroke_width);
+            cairo_stroke(cr);
+        }
+#if 0
+        if (0) { // char string
+            if (0) {  // Draw text
                 cairo_show_text(cr, t->utf8);
-            } else if (1) { // draw path
+            }  else {  // Draw path
                 cairo_move_to(cr, 0, 0);
                 cairo_rotate(cr, 45);
                 cairo_text_path(cr, t->utf8);
                 cairo_fill (cr);
             }
-        } else { // Cairo render/draw by using given glyph or clusers
-            if (0) { //(ct->num_clusters) { // render text by using glyph and clusters
+        } else { // Glyph
+            if (ct->num_clusters) {
                 cairo_show_text_glyphs (cr,
                         NULL, 0,
                         ct->glyphs, ct->num_glyphs,
                         ct->clusters, ct->num_clusters,
                         ct->cluster_flags);
-            } else if (1) {         // render text by using glyph
+            } else  {
+                /*  doesn't support subpixel positioning */
                 cairo_show_glyphs (cr, ct->glyphs, ct->num_glyphs);
-            } else {                // draw path by using glyph
-                //cairo_move_to(cr, 0, 0);
-                //cairo_rotate(cr, 45);
-                /* This should be image suface */
-                /* cairo_show_glyphs() doesn't support subpixel positioning */
-                cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
-                cairo_fill (cr);
             }
         }
+#endif
     }
 
     cairo_restore (cr);
@@ -1111,6 +1131,9 @@ _text_create(const char *utf8)
     t->font_weight = -1;
     t->font_width = -1;
     t->font_spacing = -1;
+    t->stroke_width = 2;
+    t->fill_a = 255;    // default is fill
+    t->dirty = true;
 
     return t;
 }
@@ -1121,6 +1144,17 @@ _text_draw(Text *t, cairo_t *cr)
     RET_IF(!t);
     RET_IF(!t->utf8);
     RET_IF(!t->utf8_len);
+
+
+    if (!t->dirty) goto _text_draw_again;
+    t->dirty = false;
+
+    if (t->cairo_texts) {
+        for (unsigned int i = 0 ; i < t->line_num ; i++) {
+            _text_cairo_destroy(t->cairo_texts[i]);
+        }
+        t->cairo_texts = NULL;
+    }
 
     // font size adjustment
     if (t->font_size <= 0) t->font_size = 9;
@@ -1136,7 +1170,7 @@ _text_draw(Text *t, cairo_t *cr)
     num_glyphs = hb_buffer_get_length(t->hb_buffer);
 
 
-    double maxw, maxh, toth = 0;
+    double maxw, maxh;
     bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
     if (vertical) {
         if (t->height) maxw = t->height;
@@ -1166,15 +1200,16 @@ _text_draw(Text *t, cairo_t *cr)
         } else {
             w = maxw;
         }
-        h = line_num * t->font_size;
-        toth += h;
+        h = (line_num * t->font_size) +
+            ((line_num -1 ) *t->line_space);
+        LOG("%lf", h);
 
         if (to >= (num_glyphs - 1)) {
             //LOG("end of glyph");
             break;
         }
 
-        if (toth > maxh || EQUAL(toth, maxh)) { // double comparison
+        if (h > maxh || EQUAL(h, maxh)) { // double comparison
             //LOG("exceed height");
             if (!t->ellipsis) {
                 t->font_size -= 1; // FIXME performance issue!!
@@ -1217,6 +1252,7 @@ _text_draw(Text *t, cairo_t *cr)
     t->line_num = line_num;
     //LOG("w:%lf h:%lf line_num:%d, font_size: %d", t->width, t->height, t->line_num, t->font_size);
 
+_text_draw_again:
     _text_draw_cairo(cr, t);
 }
 
@@ -1224,11 +1260,7 @@ static void
 _text_dirty(Text *t)
 {
     RET_IF(!t);
-    if (!t->cairo_texts) return;
-    for (unsigned int i = 0 ; i < t->line_num ; i++) {
-        _text_cairo_destroy(t->cairo_texts[i]);
-    }
-    t->cairo_texts = NULL;
+    t->dirty = true;
 }
 
 // e.g. "LiberationMono", "Times New Roman", "Arial", etc.
