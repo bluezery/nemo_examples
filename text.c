@@ -773,7 +773,6 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     // for some languages (hebrew or japanese, etc.),
     // hb_buffer should be splitted for each line.
     if (is_cluster) {
-
         num_clusters = 1;
         for (i = from + 1 ; i < (to + 1); i++) {
             if (hb_glyphs[i].cluster != hb_glyphs[i-1].cluster)
@@ -799,12 +798,14 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
         if (backward) {
             for (i = num_glyphs - 2; i ; i--) {
                 if (hb_glyphs[i].cluster != hb_glyphs[i+1].cluster) {
-                    if (hb_glyphs[i].cluster >= hb_glyphs[i+1].cluster) {
+                    if (hb_glyphs[i].cluster <= hb_glyphs[i+1].cluster) {
                         ERR("cluster index is not correct");
                         cairo_glyph_free(glyphs);
                         cairo_text_cluster_free(clusters);
                         return NULL;
                     }
+                    clusters[cluster].num_bytes = hb_glyphs[i].cluster - hb_glyphs[i+1].cluster;
+                    end = start + clusters[cluster].num_bytes;
                     start = end;
                     cluster++;
                 }
@@ -974,169 +975,6 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
     *_str_len = str_len;
 }
 
-// You can restrict width and maximum number of line and set ellipsis.
-// if width or line is below or equal to 0, it's useless)
-Text *
-_text_create_all(Font *font, const char *utf8,
-        const char *dir, const char *script, const char *lang, const char *features,
-        double line_space,
-        double width, unsigned int line_num, bool ellipsis)
-{
-    RET_IF(!font || !utf8, NULL);
-
-    Text *text;
-
-    unsigned int utf8_len = 0;
-    unsigned int str_len = 0;
-    char *str = NULL;
-
-    hb_buffer_t *hb_buffer;
-
-    unsigned int num_glyphs;
-
-    Cairo_Text **cairo_texts;
-
-    utf8_len = strlen(utf8);
-    if (utf8_len == 0) {
-        ERR("utf8 length is 0");
-        return NULL;
-    }
-
-    str = (char *)malloc(sizeof(char) * utf8_len);
-#if 1
-    // Remove special characters (e.g. line feed, backspace, etc.)
-    for (unsigned int i = 0 ; i < utf8_len ; i++) {
-        if (utf8[i] >> 31 ||
-            (utf8[i] > 0x1F)) { // If it is valid character
-            str[str_len] = utf8[i];
-            str_len++;
-        }
-    }
-    if (!str || str_len <=0 ) return NULL;
-    str = (char *)realloc(str, sizeof(char) * (str_len + 1));
-    str[str_len] = '\0';
-#else
-    str = strdup(utf8);
-    str_len = utf8_len;
-#endif
-
-    hb_direction_t hb_dir = HB_DIRECTION_INVALID;
-    hb_script_t hb_script = HB_SCRIPT_INVALID;
-    hb_language_t hb_lang = HB_LANGUAGE_INVALID;
-    hb_feature_t *hb_features = NULL;
-
-    if (dir) { // "LTR" (Left to Right), "RTL", "TTB", 'BTT", and lower case
-        hb_dir = hb_direction_from_string(dir, -1);
-    }
-    if (script) { // ISO=15024 tag "latn" (LATIN), "hang" (HANGUL), "Hira" (HIRAGANA), "Kana" (KATAKANA), etc.
-        hb_script = hb_script_from_string(script, -1);
-    }
-    if (lang) { // ko, en, etc.
-        hb_lang = hb_language_from_string(lang, -1);
-    }
-    unsigned int hb_features_num = 0;
-    if (features) { // i.e. "kern,aalt=2"
-        // CSS  font-feature-setting (except 'normal', 'inherited')
-        // e.g. kern, kern=0, +kern, -kern, kern[3:5], kern[3], aalt=2
-        const char *start, *p;
-
-        hb_features_num++;
-        p = features;
-        while (p && *p) {
-            if (*p == ',') hb_features_num++;
-            p++;
-        }
-        hb_features = (hb_feature_t *)malloc(sizeof(hb_feature_t) * hb_features_num);
-
-        unsigned int idx = 0;
-        start = p = features;
-        while (p) {
-            if (*p == ',' || !*p) {
-                hb_feature_from_string(start, p - start, &hb_features[idx]);
-                if (!*p) break;
-                start = p + 1;
-                idx++;
-            }
-            p++;
-        }
-    }
-
-    hb_buffer = _text_hb_create(NULL, str, str_len, hb_dir, hb_script, hb_lang,
-            hb_features_num, hb_features, font->hb_font);
-    num_glyphs = hb_buffer_get_length(hb_buffer);
-
-    if (line_num <= 0) { // line num is not specified
-        line_num = 1410065407; // infinite
-    }
-    if (width <= 0) { // width is not specified
-        width = 1410065407; // infinite
-    }
-
-    // Calculate  line_num & ellipsis position.
-    unsigned int ln = 1;
-    double tw = 0;
-    double lw = 0;
-    unsigned int i = 0;
-    double glyph_w = 0;
-    hb_glyph_position_t *glyph_poses;
-    glyph_poses = hb_buffer_get_glyph_positions(hb_buffer, NULL);
-    for (i = 0; i < num_glyphs ; i++) {
-        glyph_w = ((glyph_poses[i].x_offset + glyph_poses[i].x_advance) * font->cairo_scale);
-        lw += glyph_w;
-        tw += glyph_w;
-        if (lw >= width) {
-            i--;
-            ln++;
-        }
-        if (ln > line_num) {
-            ln--;
-            break;
-        }
-        if (lw >= width) lw = 0;
-    }
-    if (tw < width) width = tw;
-
-    line_num = ln;
-    if (ellipsis && (i < num_glyphs)) { // ellipsis is needed
-        // If width is too small for ellipsis glyph, change last glyph as ellipsis.
-        if ((lw - glyph_w + font->max_width) > width)  i--;
-
-        _str_ellipsis_append(&str, &str_len, i);
-        // shaping again with ellipsis
-        hb_buffer = _text_hb_create(hb_buffer, str, str_len,
-                hb_dir, hb_script, hb_lang, hb_features_num, hb_features, font->hb_font);
-        num_glyphs = hb_buffer_get_length(hb_buffer);
-    }
-
-    cairo_texts = (Cairo_Text **)malloc(sizeof(Cairo_Text *) * line_num);
-
-    if ((line_num == 1) && (i <= num_glyphs)) {// if exact single line
-        // FIXME: This should be here because  _text_hb_get_idx_within()
-        // function cannot solve double precison for width.
-        cairo_texts[0] = _text_cairo_create(font, hb_buffer, str, str_len, 0, i, true);
-    } else {
-        unsigned int from = 0, to;
-        for (unsigned int i = 0 ; i < line_num ; i++) {
-            to = _text_hb_get_idx_within(hb_buffer, false, font->cairo_scale, 1, from, width, NULL);
-            cairo_texts[i] = _text_cairo_create(font, hb_buffer, str, str_len, from, to, false);
-            from = to + 1;
-        }
-    }
-
-    text = (Text *)malloc(sizeof(Text));
-    text->utf8 = str;
-    text->utf8_len = str_len;
-    text->hb_dir = hb_dir;
-    text->line_num = line_num;
-    text->line_space = line_space;
-    text->width = width;
-    text->height = (font->height *line_num) + (line_space * (line_num -1));
-    text->cairo_texts = cairo_texts;
-
-    hb_buffer_destroy(hb_buffer);
-    return text;
-}
-
 void
 _text_draw_cairo(cairo_t *cr, Text *t)
 {
@@ -1266,11 +1104,6 @@ _text_create(const char *utf8)
     return t;
 }
 
-static void
-_text_calc(Text *t)
-{
-}
-
 void
 _text_draw(Text *t, cairo_t *cr)
 {
@@ -1316,7 +1149,7 @@ _text_draw(Text *t, cairo_t *cr)
         to = _text_hb_get_idx_within(t->hb_buffer, vertical, scale, t->wrap, from, maxw, &size);
         t->cairo_texts = realloc(t->cairo_texts, sizeof(Cairo_Text *) * line_num);
         t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
-                t->utf8, t->utf8_len, from, to, false);
+                t->utf8, t->utf8_len, from, to, true);
         if (line_num == 1) {
             w = size;
         } else {
@@ -1361,7 +1194,7 @@ _text_draw(Text *t, cairo_t *cr)
         num_glyphs = hb_buffer_get_length(t->hb_buffer);
         _text_cairo_destroy(t->cairo_texts[line_num-1]);
         t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
-                t->utf8, t->utf8_len, from, to, false);
+                t->utf8, t->utf8_len, from, to, true);
     }
     if (vertical) {
         t->width = h;

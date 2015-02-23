@@ -67,7 +67,7 @@ double _text_get_line_space(Text *t);
 
 // You can restrict width and maximum number of line and set ellipsis.
 // if width or line is below or equal to 0, it's useless)
-Text *_text_create_all(Font *font, const char *utf8, const char *dir, const char *script, const char *lang, const char *features, double line_space, double width, unsigned int line_num, bool ellipsis);
+//Text *_text_create_all(Font *font, const char *utf8, const char *dir, const char *script, const char *lang, const char *features, double line_space, double width, unsigned int line_num, bool ellipsis);
 void _text_draw_cairo(cairo_t *cr, Text *text);
 void _text_get_direction(Text *t, bool *vertical, bool *bacward);
 
