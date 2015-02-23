@@ -112,9 +112,10 @@ int main(int argc, char *argv[])
     for (int i = 0 ; i < line_len ; i++) {
         text[i] = _text_create(line_txt[i]); //NULL, NULL, NULL, NULL, line_space, 0, 3, true);
         //_text_set_font_family(text[i], "LiberationMono");
-        _text_set_width(text[i], 200);
-        //_text_set_direction(text[i], true, false);
-        //_text_set_height(text[i], 230);
+        //_text_set_width(text[i], 200);
+        _text_set_direction(text[i], true, false);
+        _text_set_height(text[i], 230);
+        _text_set_anchor(text[i], 0.1);
         _text_set_ellipsis(text[i], true);
         _text_set_line_space(text[i], 30);
         _text_set_font_size(text[i], 50);

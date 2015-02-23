@@ -1001,21 +1001,19 @@ _text_draw_cairo(cairo_t *cr, Text *t)
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
 
-    LOG("%lf + %lf = %lf", font_extents.ascent, font_extents.descent,
-            font_extents.height);
     if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
         double descent = font_extents.height * (t->line_num + .5) +
             ((t->line_num -1 ) * (t->line_space/t->font_size));
-        cairo_translate (cr, descent, 0);
+        double anchor = -(t->anchor * t->height)/t->font_size;
+        cairo_translate (cr, descent, anchor);
     } else {
         double descent = font_extents.descent;
-        cairo_translate (cr, 0, -descent);
+        double anchor = -(t->anchor * t->width)/t->font_size;
+        cairo_translate (cr, anchor, -descent);
     }
 
-    Cairo_Text **cts = t->cairo_texts;
-
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
-        Cairo_Text *ct = cts[i];
+        Cairo_Text *ct = (t->cairo_texts)[i];
 
         if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
             if (i)
@@ -1030,6 +1028,7 @@ _text_draw_cairo(cairo_t *cr, Text *t)
             cairo_translate (cr, 0, font_extents.height);
         }
 
+#if 0
         // annotate
         if (0) {
             cairo_save (cr);
@@ -1045,7 +1044,7 @@ _text_draw_cairo(cairo_t *cr, Text *t)
             cairo_stroke (cr);
             cairo_restore (cr);
         }
-
+#endif
         /* Should be image surface*/
         if (t->fill_a > 0) {
             cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
@@ -1169,7 +1168,6 @@ _text_draw(Text *t, cairo_t *cr)
     t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len, t->hb_dir, t->hb_script, t->hb_lang, t->hb_features_num, t->hb_features, t->font->hb_font);
     num_glyphs = hb_buffer_get_length(t->hb_buffer);
 
-
     double maxw, maxh;
     bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
     if (vertical) {
@@ -1202,7 +1200,6 @@ _text_draw(Text *t, cairo_t *cr)
         }
         h = (line_num * t->font_size) +
             ((line_num -1 ) *t->line_space);
-        LOG("%lf", h);
 
         if (to >= (num_glyphs - 1)) {
             //LOG("end of glyph");
@@ -1597,6 +1594,8 @@ _text_get_stroke_width(Text *t)
     return t->stroke_width;
 }
 
+// FIXME: This function is not implemented yet.
+// You should split all glyph one by one.
 bool
 _text_set_letter_spacing(Text *t, int space)
 {
@@ -1613,6 +1612,8 @@ _text_get_letter_spacing(Text *t)
     return t->letter_spacing;
 }
 
+// FIXME: This function is not implemented yet.
+// You should split all glyph one by one.
 bool
 _text_set_word_spacing(Text *t, int space)
 {
