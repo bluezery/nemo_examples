@@ -860,17 +860,26 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
     hb_glyph_info_t *info = hb_buffer_get_glyph_infos(buffer, NULL);
     double sz = 0, prev_sz = 0;
     unsigned int i = 0;
+    int last_space_idx = -1;
 
     glyph_poses = hb_buffer_get_glyph_positions(buffer, &num_glyphs);
     if (!glyph_poses) return 0;
 
     for (i = start; i < num_glyphs ; i++) {
+        if (1 == info[i].codepoint) {
+            last_space_idx = i;
+        }
         if (vertical)
             sz -= glyph_poses[i].y_advance * scale;
         else
             sz += glyph_poses[i].x_advance * scale;
-        if (sz >= size) break;
         prev_sz = sz;
+        if (sz >= size) {
+            if (wrap && (last_space_idx >= 0)) {
+                i = last_space_idx + 1;
+            }
+            break;
+        }
     }
 
     if (ret_size) *ret_size = prev_sz;
@@ -1622,7 +1631,7 @@ _text_get_ellipsis(Text *t)
     return t->ellipsis;
 }
 
-// 0: None, 1: word wrap, 2: char warp
+// 0: None, 1: auto (wrap prefer), 2: char warp
 bool
 _text_set_wrap(Text *t, int wrap)
 {
