@@ -770,8 +770,8 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     glyphs[i].y = y * font->cairo_scale;
 
     // FIXME: If multiline is used, do not use cluster
-    // for some languages (hebrew or japanese, etc.),
-    // hb_buffer should be splitted for each line.
+    // for some multibyte languages (korean, hebrew or japanese, etc.),
+    // You should make a hb_buffer for each line.
     if (is_cluster) {
         num_clusters = 1;
         for (i = from + 1 ; i < (to + 1); i++) {
@@ -796,7 +796,8 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
         clusters[cluster].num_glyphs++;
 
         if (backward) {
-            for (i = num_glyphs - 2; i ; i--) {
+            if (num_glyphs <= 1) num_glyphs = 2;
+            for (i = num_glyphs - 2 ; i ; i--) {
                 if (hb_glyphs[i].cluster != hb_glyphs[i+1].cluster) {
                     if (hb_glyphs[i].cluster <= hb_glyphs[i+1].cluster) {
                         ERR("cluster index is not correct");
@@ -856,6 +857,7 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
 
     unsigned int num_glyphs;
     hb_glyph_position_t *glyph_poses;
+    hb_glyph_info_t *info = hb_buffer_get_glyph_infos(buffer, NULL);
     double sz = 0, prev_sz = 0;
     unsigned int i = 0;
 
