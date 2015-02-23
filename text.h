@@ -51,7 +51,7 @@ int _text_get_letter_spacing(Text *t);
 bool _text_set_word_spacing(Text *t, int space);
 int _text_get_word_spacing(Text *t);
 
-bool _text_set_decoratoin(Text *t, unsigned int decoration);
+bool _text_set_decoration(Text *t, unsigned int decoration);
 unsigned int _text_get_decoration(Text *t);
 bool _text_set_ellipsis(Text *t, bool ellipsis);
 bool _text_get_ellipsis(Text *t);

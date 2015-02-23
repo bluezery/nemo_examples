@@ -112,14 +112,15 @@ int main(int argc, char *argv[])
     for (int i = 0 ; i < line_len ; i++) {
         text[i] = _text_create(line_txt[i]); //NULL, NULL, NULL, NULL, line_space, 0, 3, true);
         //_text_set_font_family(text[i], "LiberationMono");
-        //_text_set_width(text[i], 200);
-        _text_set_direction(text[i], true, false);
-        _text_set_height(text[i], 230);
-        _text_set_anchor(text[i], 0.1);
-        _text_set_ellipsis(text[i], true);
-        _text_set_line_space(text[i], 30);
+        //_text_set_width(text[i], 400);
+        _text_set_direction(text[i], true, true);
+        //_text_set_height(text[i], 430);
+        //_text_set_anchor(text[i], 0.5);
+        //_text_set_ellipsis(text[i], true);
+        _text_set_decoration(text[i], 3);
+        //_text_set_line_space(text[i], 30);
         _text_set_font_size(text[i], 50);
-        _text_set_wrap(text[i], 1);
+        _text_set_wrap(text[i], 2);
         _text_set_stroke_color(text[i], 0, 0, 0, 255);
         _text_set_stroke_width(text[i], 1);
         _text_set_fill_color(text[i], 255, 0, 0, 255);
@@ -165,11 +166,12 @@ int main(int argc, char *argv[])
         // draw cairo
         _text_draw(text[i], cr);
 
-        // Draw text bounding box
-        cairo_save(cr);
         double tw, th;
         tw = _text_get_width(text[i]);
         th = _text_get_height(text[i]);
+#if 1
+        // Draw text bounding box
+        cairo_save(cr);
         //_text_get_size(text[i], &tw, &th);
         cairo_rectangle(cr, 0, 0, tw, th);
         cairo_move_to(cr, 100, 30);
@@ -177,7 +179,7 @@ int main(int argc, char *argv[])
         cairo_set_source_rgba(cr, 1, 0, 0, 1);
         cairo_stroke(cr);
         cairo_restore(cr);
-
+#endif
         if (vertical) cairo_translate (cr, tw, 0);
         else cairo_translate (cr, 0, th);
     }

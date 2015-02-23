@@ -874,13 +874,13 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
             sz -= glyph_poses[i].y_advance * scale;
         else
             sz += glyph_poses[i].x_advance * scale;
-        prev_sz = sz;
         if (sz >= size) {
             if ((wrap == 1) && (last_space_idx >= 0)) {
                 i = last_space_idx + 1;
             }
             break;
         }
+        prev_sz = sz;
     }
 
     if (ret_size) *ret_size = prev_sz;
@@ -1001,7 +1001,9 @@ _text_draw_cairo(cairo_t *cr, Text *t)
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
 
-    if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
+    bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
+
+    if (vertical) {
         double descent = font_extents.height * (t->line_num + .5) +
             ((t->line_num -1 ) * (t->line_space/t->font_size));
         double anchor = -(t->anchor * t->height)/t->font_size;
@@ -1014,8 +1016,9 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = (t->cairo_texts)[i];
+        LOG("%lf %lf", ct->width, ct->height);
 
-        if (HB_DIRECTION_IS_VERTICAL(t->hb_dir)) {
+        if (vertical) {
             if (i)
                 cairo_translate (cr,
                         -t->line_space/(double)t->font_size, 0);
@@ -1064,6 +1067,39 @@ _text_draw_cairo(cairo_t *cr, Text *t)
                     (1./t->font_size) * t->stroke_width);
             cairo_stroke(cr);
         }
+
+        if (t->decoration) {
+            cairo_save(cr);
+            cairo_set_line_width(cr, 2./t->font_size);
+            if (t->decoration == 1) {   // underline
+                if (vertical) {
+                    cairo_move_to(cr, -font_extents.height * 0.5, 0);
+                    cairo_line_to(cr, -font_extents.height * 0.5, ct->height/t->font_size);
+                } else {
+                    cairo_move_to(cr, 0, 0);
+                    cairo_line_to(cr, ct->width/t->font_size, 0);
+                }
+            } else if (t->decoration == 2) {    // overline
+                if (vertical) {
+                    cairo_move_to(cr, font_extents.height * 0.5, 0);
+                    cairo_line_to(cr, font_extents.height * 0.5, ct->height/t->font_size);
+                } else {
+                    cairo_move_to(cr, 0, -font_extents.ascent);
+                    cairo_line_to(cr, ct->width/t->font_size, -font_extents.ascent);
+                }
+            } else if (t->decoration == 3) {    // line through
+                if (vertical) {
+                    cairo_move_to(cr, 0, 0);
+                    cairo_line_to(cr, 0, ct->height/t->font_size);
+                } else {
+                    cairo_move_to(cr, 0, -font_extents.descent);
+                    cairo_line_to(cr, ct->width/t->font_size, -font_extents.descent);
+                }
+            }
+            cairo_stroke(cr);
+            cairo_restore(cr);
+        }
+
 #if 0
         if (0) { // char string
             if (0) {  // Draw text
@@ -1193,13 +1229,18 @@ _text_draw(Text *t, cairo_t *cr)
         t->cairo_texts = realloc(t->cairo_texts, sizeof(Cairo_Text *) * line_num);
         t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
                 t->utf8, t->utf8_len, from, to, true);
-        if (line_num == 1) {
-            w = size;
-        } else {
-            w = maxw;
-        }
         h = (line_num * t->font_size) +
             ((line_num -1 ) *t->line_space);
+        if (vertical) {
+            t->cairo_texts[line_num-1]->width = h;
+            t->cairo_texts[line_num-1]->height = size;
+        } else {
+            t->cairo_texts[line_num-1]->width = size;
+            t->cairo_texts[line_num-1]->height = h;
+        }
+        if (size > w) {
+            w = size;
+        }
 
         if (to >= (num_glyphs - 1)) {
             //LOG("end of glyph");
@@ -1632,7 +1673,7 @@ _text_get_word_spacing(Text *t)
 
 // None: 0, Underline:1, Overline: 2, Line-through: 3
 bool
-_text_set_decoratoin(Text *t, unsigned int decoration)
+_text_set_decoration(Text *t, unsigned int decoration)
 {
     RET_IF(!t, false);
     _text_dirty(t);
