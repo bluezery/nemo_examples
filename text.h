@@ -9,7 +9,7 @@ typedef struct _Text Text;
 
 bool _font_init();
 void _font_shutdown();
-Font *_font_load(const char *family, const char *style, int size, int slant, int weight, int width, int spacing);
+Font *_font_load(const char *family, const char *style, int slant, int weight, int width, int spacing);
 
 void _text_destroy(Text *t);
 Text *_text_create(const char *utf8);

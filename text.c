@@ -49,21 +49,13 @@ struct _Font {
     unsigned int font_weight;
     unsigned int font_spacing;
     unsigned int font_width;
-    unsigned int font_size; // pixel size
-
-    unsigned int upem;
-
-    // Harfbuzz
-    hb_font_t *hb_font;
-    const char **shapers;
 
     // free type
     FT_Face ft_face;
 
-    // Drawing Font
-    cairo_scaled_font_t *cairo_font;
-    double cairo_scale; // used for converting size from upem space-> pixel space
-    double height, max_width;
+    // Harfbuzz
+    hb_font_t *hb_font;
+    const char **shapers;
 };
 
 struct nemolist _font_list;
@@ -106,8 +98,7 @@ struct _Text
     hb_direction_t hb_dir;
     hb_script_t hb_script;
     hb_language_t hb_lang;
-    int hb_features_num;
-    hb_feature_t *hb_features;
+    bool kerning;
     Font *font;
 
     // CSS property
@@ -136,6 +127,8 @@ struct _Text
     double line_space;
     double width, height;
     Cairo_Text **cairo_texts;
+    cairo_scaled_font_t *cairo_font;
+    double cairo_scale;
 };
 
 FT_Library _ft_lib;
@@ -418,7 +411,6 @@ _font_destroy(Font *font)
     RET_IF(!font);
     if (font->hb_font) hb_font_destroy(font->hb_font);
     if (font->ft_face) FT_Done_Face(font->ft_face);
-    if (font->cairo_font) cairo_scaled_font_destroy(font->cairo_font);
     free(font);
 }
 
@@ -454,7 +446,7 @@ _font_hb_create(const char *file, unsigned int idx)
     hb_blob_t *blob;
     hb_face_t *face;
     hb_font_t *font;
-    double upem;
+    unsigned int upem;
 
     RET_IF(!file, NULL);
 
@@ -478,6 +470,7 @@ _font_hb_create(const char *file, unsigned int idx)
     hb_face_destroy(face);
     if (!font) return NULL;
 
+    // harfbuzz should scaled up at least upem
     hb_font_set_scale(font, upem, upem);
 
     hb_ft_font_set_funcs(font);
@@ -487,41 +480,20 @@ _font_hb_create(const char *file, unsigned int idx)
 }
 
 static cairo_scaled_font_t *
-_font_cairo_scaled_create(const char *file, double height, unsigned int upem)
+_font_cairo_scaled_create(FT_Face ft_face, double size)
 {
-    RET_IF(!file, NULL);
-    RET_IF(height <= 0, NULL);
-    RET_IF(upem <= 0, NULL);
+    RET_IF(!ft_face, NULL);
+    RET_IF(size <= 0, NULL);
 
     cairo_font_face_t *cairo_face;
     cairo_matrix_t ctm, font_matrix;
     cairo_font_options_t *font_options;
     cairo_scaled_font_t *scaled_font;
-    FT_Face ft_face;
-    double scale;
 
-    ft_face = _font_ft_create(file, 0);
-    if (ft_face) {
-        cairo_face = cairo_ft_font_face_create_for_ft_face(ft_face, 0);
-        if (cairo_font_face_set_user_data(cairo_face, NULL, ft_face,
-                    (cairo_destroy_func_t)FT_Done_Face)
-            || cairo_font_face_status(cairo_face) != CAIRO_STATUS_SUCCESS) {
-            ERR("cairo ft font face create for ft face failed");
-            cairo_font_face_destroy(cairo_face);
-            FT_Done_Face(ft_face);
-            return NULL;
-        }
-    } else {
-        ERR("Something wrong. Testing font is just created");
-        cairo_face = cairo_toy_font_face_create("@cairo:sans",
-                CAIRO_FONT_SLANT_NORMAL,
-                CAIRO_FONT_WEIGHT_NORMAL);
-    }
+    cairo_face = cairo_ft_font_face_create_for_ft_face(ft_face, 0);
 
-    // It's pixel size, not font size, scalng by EM space / Pixel space
-    scale = height * upem/(ft_face->max_advance_height);
     cairo_matrix_init_identity(&ctm);
-    cairo_matrix_init_scale(&font_matrix, scale, scale);
+    cairo_matrix_init_scale(&font_matrix, size, size);
 
     font_options = cairo_font_options_create();
     cairo_font_options_set_hint_style(font_options, CAIRO_HINT_STYLE_NONE);
@@ -538,6 +510,11 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
     }
 
     scaled_font = cairo_scaled_font_create (cairo_face, &font_matrix, &ctm, font_options);
+    if (CAIRO_STATUS_SUCCESS != cairo_scaled_font_status(scaled_font)) {
+        ERR("cairo scaled font create");
+        cairo_scaled_font_destroy(scaled_font);
+        return NULL;
+    }
     cairo_font_options_destroy(font_options);
     cairo_font_face_destroy(cairo_face);
 
@@ -545,36 +522,21 @@ _font_cairo_scaled_create(const char *file, double height, unsigned int upem)
 }
 
 static Font *
-_font_create(const char *filepath, unsigned int idx, const char *font_family, const char *font_style, unsigned int font_slant, unsigned int font_weight, unsigned int font_spacing, unsigned int font_width, unsigned int font_size)
+_font_create(const char *filepath, unsigned int idx, const char *font_family, const char *font_style, unsigned int font_slant, unsigned int font_weight, unsigned int font_spacing, unsigned int font_width)
 
  {
     RET_IF(!filepath || !font_family || !font_style, NULL);
     RET_IF(!_file_exist(filepath), NULL);
 
     Font *font;
-
+    FT_Face ft_face;
     hb_font_t *hb_font;
 
-    FT_Face ft_face;
-
-    cairo_scaled_font_t *cairo_font;
-
-    unsigned int upem;
-
-    hb_font = _font_hb_create(filepath, idx);
-    if (!hb_font) return NULL;
-
-    // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
-    // upem(Unit per em) is used for master (or Em) space.
-    upem = hb_face_get_upem(hb_font_get_face(hb_font));
-
-    // Create freetype !!
     ft_face = _font_ft_create(filepath, 0);
     if (!ft_face) return NULL;
 
-    cairo_font = _font_cairo_scaled_create(filepath, font_size, upem);
-    cairo_font_extents_t extents;
-    cairo_scaled_font_extents(cairo_font, &extents);
+    hb_font = _font_hb_create(filepath, idx);
+    if (!hb_font) return NULL;
 
     font = (Font *)calloc(sizeof(Font), 1);
     font->filepath = strdup(filepath);
@@ -585,18 +547,9 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
     font->font_weight = font_weight;
     font->font_spacing = font_spacing;
     font->font_width = font_width;
-    font->font_size = font_size;
-    font->upem = upem;
+    font->ft_face = ft_face;
     font->hb_font = hb_font;
     font->shapers = NULL;  //e.g. {"ot", "fallback", "graphite2", "coretext_aat"}
-    font->ft_face = ft_face;
-    font->cairo_font = cairo_font;
-    // Scale will be used to multiply master outline coordinates to produce
-    // pixel distances on a device.
-    font->cairo_scale = (double)font_size / ft_face->max_advance_height;
-
-    font->height = extents.height;
-    font->max_width = extents.max_x_advance;
 
     return font;
 }
@@ -608,7 +561,7 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
 // font_width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
 // font_spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
 Font *
-_font_load(const char *font_family, const char *font_style, int font_size, int font_slant, int font_weight, int font_width, int font_spacing)
+_font_load(const char *font_family, const char *font_style, int font_slant, int font_weight, int font_width, int font_spacing)
 {
     Font *font = NULL, *temp;
     FcBool ret;
@@ -617,7 +570,7 @@ _font_load(const char *font_family, const char *font_style, int font_size, int f
 
     if (!_font_config) return NULL;
 
-    // CACHE PUSH: Find from already inserted font list
+    // CACHE POP: Find from already inserted font list
     nemolist_for_each(temp, &_font_list, link) {
         if ((font_family && !strcmp(temp->font_family, font_family)) &&
             (font_style && !strcmp(temp->font_style, font_style)) &&
@@ -699,10 +652,10 @@ _font_load(const char *font_family, const char *font_style, int font_size, int f
     FcPatternGetInteger(set->fonts[0], FC_WEIGHT, 0, &_weight);
     FcPatternGetInteger(set->fonts[0], FC_SPACING, 0, &_spacing);
     FcPatternGetInteger(set->fonts[0], FC_WIDTH, 0, &_width);
-    if (font_size <= 0) font_size = 9;  // default font size
 
     font = _font_create((char *)filepath, 0, (char *)_family, (char *)_style,
-            _slant, _weight, _spacing, _width, font_size);
+            _slant, _weight, _spacing, _width);
+    // CACHE PUSH
     if (font) nemolist_insert_tail(&_font_list, &font->link);
     FcFontSetDestroy(set);
 
@@ -720,8 +673,8 @@ _text_cairo_destroy(Cairo_Text *ct)
 
 // if from or to is -1, the ignore range.
 static Cairo_Text *
-_text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
-        int from, int to, bool is_cluster)
+_text_cairo_create(hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
+        int from, int to, bool is_cluster, double scale)
 {
     unsigned int num_glyphs;
     hb_glyph_info_t *hb_glyphs;
@@ -735,7 +688,7 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     unsigned int i = 0;
     unsigned int j;
 
-    RET_IF(!font || !hb_buffer || !utf8, NULL);
+    RET_IF(!hb_buffer || !utf8, NULL);
 
     hb_glyphs = hb_buffer_get_glyph_infos(hb_buffer, &num_glyphs);
     if (!hb_glyphs || !num_glyphs) return NULL;
@@ -759,16 +712,16 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     hb_position_t x = 0, y = 0;
     for (i = 0, j = from ; i < num_glyphs ; i++, j++) {
         glyphs[i].index = hb_glyphs[j].codepoint;
-        glyphs[i].x =  (hb_glyph_poses[j].x_offset + x) * font->cairo_scale;
-        glyphs[i].y = (-hb_glyph_poses[j].y_offset + y) * font->cairo_scale;
+        glyphs[i].x =  (hb_glyph_poses[j].x_offset + x) * scale;
+        glyphs[i].y = (-hb_glyph_poses[j].y_offset + y) * scale;
         x +=  hb_glyph_poses[j].x_advance;
         y += -hb_glyph_poses[j].y_advance;
         //LOG("[%d] %d, %d", j, hb_glyph_poses[j].x_offset, hb_glyph_poses[j].x_advance);
         //LOG("[%d] %d, %d", j, hb_glyph_poses[j].y_offset, hb_glyph_poses[j].y_advance);
     }
     glyphs[i].index = -1;
-    glyphs[i].x = x * font->cairo_scale;
-    glyphs[i].y = y * font->cairo_scale;
+    glyphs[i].x = x * scale;
+    glyphs[i].y = y * scale;
 
     // FIXME: If multiline is used, do not use cluster
     // for some multibyte languages (korean, hebrew or japanese, etc.),
@@ -836,22 +789,19 @@ _text_cairo_create(Font *font, hb_buffer_t *hb_buffer, const char* utf8, size_t 
     }
 
     Cairo_Text *ct = (Cairo_Text *)calloc(sizeof(Cairo_Text), 1);
-    //ct->width = glyphs[i].x ;
-    //ct->height = font->font_size;
     ct->num_glyphs = num_glyphs;
     ct->glyphs = glyphs;
     ct->num_clusters = num_clusters;
     ct->clusters = clusters;
     ct->cluster_flags = cluster_flags;
-    ct->font = cairo_scaled_font_reference(font->cairo_font);
 
     return ct;
 }
 
 // if return -1, no glyph can be exist within given size.
 static int
-_text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
-        int wrap, unsigned int start, double size, double *ret_size)
+_text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, int wrap,
+        unsigned int start, double size, double *ret_size, double scale)
 {
     RET_IF(!buffer, -1);
     RET_IF(start < 0, -1);
@@ -870,10 +820,8 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
         if (1 == info[i].codepoint) {
             last_space_idx = i;
         }
-        if (vertical)
-            sz -= glyph_poses[i].y_advance * scale;
-        else
-            sz += glyph_poses[i].x_advance * scale;
+        if (vertical) sz -= glyph_poses[i].y_advance * scale;
+        else          sz += glyph_poses[i].x_advance * scale;
         if (sz >= size) {
             if ((wrap == 1) && (last_space_idx >= 0)) {
                 i = last_space_idx + 1;
@@ -890,7 +838,7 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, double scale,
 static hb_buffer_t *
 _text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len,
         hb_direction_t hb_dir, hb_script_t hb_script, hb_language_t hb_lang,
-        unsigned int hb_features_num, hb_feature_t *hb_features, hb_font_t *hb_font)
+        bool kerning, hb_font_t *hb_font)
 {
     hb_buffer_t *hb_buffer;
 
@@ -925,14 +873,23 @@ _text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len
 
     hb_buffer_guess_segment_properties(hb_buffer);
 
+    // Currently, I consider only one feature, kerning.
+    hb_feature_t *hb_features = malloc(sizeof(hb_feature_t));
+    if (!kerning) {  // Turn off kerning
+        hb_feature_from_string("-kern", 5, &(hb_features[0]));
+    } else {
+        hb_feature_from_string("+kern", 5, &(hb_features[0]));
+    }
+
     // Shape buffer data by using buffer, features, shapers, etc..
     // Each glyph's unicode is mapped into glyph's codepoint. (e.g. U+D55C => CE0)
-    if (!hb_shape_full(hb_font, hb_buffer, hb_features, hb_features_num, NULL)) {
+    if (!hb_shape_full(hb_font, hb_buffer, hb_features, 1, NULL)) {
         hb_buffer_set_length(hb_buffer, 0);
         ERR("hb shape full failed");
         hb_buffer_destroy(hb_buffer);
         return NULL;
     }
+    free(hb_features);
 
     // It can be used for cluster, seems to not be necessary for single cluster
     //hb_buffer_normalize_glyphs(hb_buffer);
@@ -946,10 +903,10 @@ _text_destroy(Text *t)
 
     hb_buffer_destroy(t->hb_buffer);
     free(t->utf8);
-    if (t->hb_features) free(t->hb_features);
 
     if (t->font_family) free(t->font_family);
     if (t->font_style) free(t->font_style);
+    if (t->cairo_font) cairo_scaled_font_destroy(t->cairo_font);
 
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
         _text_cairo_destroy((t->cairo_texts)[i]);
@@ -990,13 +947,11 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
 void
 _text_draw_cairo(cairo_t *cr, Text *t)
 {
-    Font *font = t->font;
     cairo_save(cr);
 
-    // Rescale up normalized font as font size
-    cairo_scale(cr, t->font_size, t->font_size);
-
-    cairo_set_scaled_font(cr, font->cairo_font);
+    cairo_set_scaled_font(cr, t->cairo_font);
+    cairo_set_font_size(cr,
+            t->font_size * t->font->ft_face->units_per_EM / (double)t->font->ft_face->max_advance_height);
 
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
@@ -1005,13 +960,13 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     if (vertical) {
         double descent = font_extents.height * (t->line_num + .5) +
-            ((t->line_num -1 ) * (t->line_space/t->font_size));
-        double anchor = -(t->anchor * t->height)/t->font_size;
+            ((t->line_num -1 ) * t->line_space);
+        double anchor = -t->anchor * t->height;
         cairo_translate (cr, descent, anchor);
     } else {
         double descent = font_extents.descent;
-        double anchor = -(t->anchor * t->width)/t->font_size;
-        cairo_translate (cr, anchor, -descent);
+        double anchor = -t->anchor * t->width;
+        cairo_translate(cr, anchor, -descent);
     }
 
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
@@ -1020,14 +975,12 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
         if (vertical) {
             if (i)
-                cairo_translate (cr,
-                        -t->line_space/(double)t->font_size, 0);
+                cairo_translate (cr, -t->line_space, 0);
             cairo_translate (cr, -font_extents.height, 0);
         }
         else {
             if (i)
-                cairo_translate (cr, 0,
-                        t->line_space/(double)t->font_size);
+                cairo_translate (cr, 0, t->line_space);
             cairo_translate (cr, 0, font_extents.height);
         }
 
@@ -1061,39 +1014,35 @@ _text_draw_cairo(cairo_t *cr, Text *t)
             cairo_set_source_rgba (cr,
                     t->stroke_r/255., t->stroke_g/255.,
                     t->stroke_b/255., t->stroke_a/255.);
-            // stroke width can be scaled by cairo_scale().
-            // So scale down it.
-            cairo_set_line_width (cr,
-                    (1./t->font_size) * t->stroke_width);
+            cairo_set_line_width (cr, t->stroke_width);
             cairo_stroke(cr);
         }
 
         if (t->decoration) {
             cairo_save(cr);
-            cairo_set_line_width(cr, 2./t->font_size);
             if (t->decoration == 1) {   // underline
                 if (vertical) {
                     cairo_move_to(cr, -font_extents.height * 0.5, 0);
-                    cairo_line_to(cr, -font_extents.height * 0.5, ct->height/t->font_size);
+                    cairo_line_to(cr, -font_extents.height * 0.5, ct->height);
                 } else {
                     cairo_move_to(cr, 0, 0);
-                    cairo_line_to(cr, ct->width/t->font_size, 0);
+                    cairo_line_to(cr, ct->width, 0);
                 }
             } else if (t->decoration == 2) {    // overline
                 if (vertical) {
                     cairo_move_to(cr, font_extents.height * 0.5, 0);
-                    cairo_line_to(cr, font_extents.height * 0.5, ct->height/t->font_size);
+                    cairo_line_to(cr, font_extents.height * 0.5, ct->height);
                 } else {
                     cairo_move_to(cr, 0, -font_extents.ascent);
-                    cairo_line_to(cr, ct->width/t->font_size, -font_extents.ascent);
+                    cairo_line_to(cr, ct->width, -font_extents.ascent);
                 }
             } else if (t->decoration == 3) {    // line through
                 if (vertical) {
                     cairo_move_to(cr, 0, 0);
-                    cairo_line_to(cr, 0, ct->height/t->font_size);
+                    cairo_line_to(cr, 0, ct->height);
                 } else {
                     cairo_move_to(cr, 0, -font_extents.descent);
-                    cairo_line_to(cr, ct->width/t->font_size, -font_extents.descent);
+                    cairo_line_to(cr, ct->width, -font_extents.descent);
                 }
             }
             cairo_stroke(cr);
@@ -1197,11 +1146,22 @@ _text_draw(Text *t, cairo_t *cr)
     if (t->width && (t->font_size > t->width))   t->font_size = t->width;
 
     unsigned int num_glyphs = 0;
-    // Use normalized font size as 1
-    t->font = _font_load(t->font_family, t->font_style, 1, t->font_slant, t->font_weight, t->font_width, t->font_spacing);
+    t->font = _font_load(t->font_family, t->font_style, t->font_slant,
+            t->font_weight, t->font_width, t->font_spacing);
+
+    if (!t->cairo_font) {
+        // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
+        // upem(Unit per em) is used for master (or Em) space.
+        // scale will be used for converting pixel size from EM space to user space.
+        t->cairo_font = _font_cairo_scaled_create(t->font->ft_face,
+               t->font_size * t->font->ft_face->units_per_EM / (double)t->font->ft_face->max_advance_height);
+    }
+    // because harfbuzz should be scaled up at least upem, later scaled it down as font_size.
+    t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
 
     // FIXME: Use cache for hb_buffer if possible
-    t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len, t->hb_dir, t->hb_script, t->hb_lang, t->hb_features_num, t->hb_features, t->font->hb_font);
+    t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len,
+            t->hb_dir, t->hb_script, t->hb_lang, t->kerning, t->font->hb_font);
     num_glyphs = hb_buffer_get_length(t->hb_buffer);
 
     double maxw, maxh;
@@ -1224,11 +1184,11 @@ _text_draw(Text *t, cairo_t *cr)
 
     while (1) {
         double size;
-        double scale = t->font->cairo_scale * t->font_size;
-        to = _text_hb_get_idx_within(t->hb_buffer, vertical, scale, t->wrap, from, maxw, &size);
+        to = _text_hb_get_idx_within(t->hb_buffer, vertical, t->wrap,
+                from, maxw, &size, t->cairo_scale);
         t->cairo_texts = realloc(t->cairo_texts, sizeof(Cairo_Text *) * line_num);
-        t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
-                t->utf8, t->utf8_len, from, to, true);
+        t->cairo_texts[line_num-1] = _text_cairo_create(t->hb_buffer,
+                t->utf8, t->utf8_len, from, to, true, t->cairo_scale);
         h = (line_num * t->font_size) +
             ((line_num -1 ) *t->line_space);
         if (vertical) {
@@ -1251,6 +1211,7 @@ _text_draw(Text *t, cairo_t *cr)
             //LOG("exceed height");
             if (!t->ellipsis) {
                 t->font_size -= 1; // FIXME performance issue!!
+                t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
                 continue;
             }
             break;
@@ -1259,6 +1220,7 @@ _text_draw(Text *t, cairo_t *cr)
             //LOG("No wrap");
             if (!t->ellipsis) {
                 t->font_size -= 1; // FIXME performance issue!!
+                t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
                 continue;
             }
             w = size;
@@ -1273,12 +1235,11 @@ _text_draw(Text *t, cairo_t *cr)
         _str_ellipsis_append(&(t->utf8), &(t->utf8_len), to);
         // shaping again with ellipsis
         t->hb_buffer = _text_hb_create(t->hb_buffer, t->utf8, t->utf8_len,
-                t->hb_dir, t->hb_script, t->hb_lang, t->hb_features_num,
-                t->hb_features, t->font->hb_font);
+                t->hb_dir, t->hb_script, t->hb_lang, t->kerning, t->font->hb_font);
         num_glyphs = hb_buffer_get_length(t->hb_buffer);
         _text_cairo_destroy(t->cairo_texts[line_num-1]);
-        t->cairo_texts[line_num-1] = _text_cairo_create(t->font, t->hb_buffer,
-                t->utf8, t->utf8_len, from, to, true);
+        t->cairo_texts[line_num-1] = _text_cairo_create(t->hb_buffer,
+                t->utf8, t->utf8_len, from, to, true, t->cairo_scale);
     }
     if (vertical) {
         t->width = h;
@@ -1288,7 +1249,6 @@ _text_draw(Text *t, cairo_t *cr)
         t->height = h;
     }
     t->line_num = line_num;
-    //LOG("w:%lf h:%lf line_num:%d, font_size: %d", t->width, t->height, t->line_num, t->font_size);
 
 _text_draw_again:
     _text_draw_cairo(cr, t);
@@ -1306,6 +1266,10 @@ bool
 _text_set_font_family(Text *t, const char *font_family)
 {
     RET_IF(!t, false);
+    if ((t->font_family && font_family &&
+         !strcmp(t->font_family, font_family)) ||
+        (!t->font_family && !font_family))
+        return true;
     _text_dirty(t);
     if (t->font_family) free(t->font_family);
 
@@ -1318,7 +1282,6 @@ const char *
 _text_get_font_family(Text *t)
 {
     RET_IF(!t, NULL);
-    _text_dirty(t);
     return t->font_family;
 }
 
@@ -1327,6 +1290,10 @@ bool
 _text_set_font_style(Text *t, const char *font_style)
 {
     RET_IF(!t, false);
+    if ((t->font_style && font_style &&
+         !strcmp(t->font_style, font_style)) ||
+        (!t->font_style && !font_style))
+        return true;
     _text_dirty(t);
     if (t->font_style) free(t->font_style);
 
@@ -1347,6 +1314,7 @@ bool
 _text_set_font_size(Text *t, int font_size)
 {
     RET_IF(!t, false);
+    if (t->font_size == font_size) return true;
     _text_dirty(t);
     t->font_size = font_size;
     return true;
@@ -1365,6 +1333,7 @@ bool
 _text_set_font_slant(Text *t, int font_slant)
 {
     RET_IF(!t, false);
+    if (t->font_slant == font_slant) return true;
     _text_dirty(t);
     t->font_slant = font_slant;
     return true;
@@ -1383,6 +1352,7 @@ bool
 _text_set_font_weight(Text *t, int font_weight)
 {
     RET_IF(!t, false);
+    if (t->font_weight == font_weight) return true;
     _text_dirty(t);
     t->font_weight = font_weight;
     return true;
@@ -1401,6 +1371,7 @@ bool
 _text_set_font_width(Text *t, int font_width)
 {
     RET_IF(!t, false);
+    if (t->font_width == font_width) return true;
     _text_dirty(t);
     t->font_width = font_width;
     return true;
@@ -1419,6 +1390,7 @@ bool
 _text_set_font_spacing(Text *t, int font_spacing)
 {
     RET_IF(!t, false);
+    if (t->font_spacing == font_spacing) return true;
     _text_dirty(t);
     t->font_spacing = font_spacing;
     return true;
@@ -1435,6 +1407,9 @@ bool
 _text_set_direction(Text *t, bool vertical, bool backward)
 {
     RET_IF(!t, false);
+    if (HB_DIRECTION_IS_VERTICAL(t->hb_dir) == vertical &&
+        HB_DIRECTION_IS_VERTICAL(t->hb_dir) == backward)
+        return true;
     _text_dirty(t);
     if (vertical) {
         if (backward)   t->hb_dir = HB_DIRECTION_BTT;
@@ -1472,8 +1447,10 @@ bool
 _text_set_script(Text *t, const char *script)
 {
     RET_IF(!t, false);
+    hb_script_t hb_script = hb_script_from_string(script, -1);
+    if (t->hb_script == hb_script) return true;
     _text_dirty(t);
-    if (script) t->hb_script = hb_script_from_string(script, -1);
+    if (script) t->hb_script = hb_script;
     else        t->hb_script = HB_SCRIPT_INVALID;
     return true;
 }
@@ -1491,10 +1468,11 @@ bool
 _text_set_lang(Text *t, const char *lang)
 {
     RET_IF(!t, false);
-    RET_IF(!lang, false);
+    hb_language_t hb_lang = hb_language_from_string(lang, -1);
+    if (t->hb_lang == hb_lang) return true;
     _text_dirty(t);
     //lang = getenv("LANG");
-    if (lang) t->hb_lang = hb_language_from_string(lang, -1);
+    if (lang) t->hb_lang = hb_lang;
     else      t->hb_lang = HB_LANGUAGE_INVALID;
     return true;
 }
@@ -1513,18 +1491,9 @@ bool
 _text_set_kerning(Text *t, bool kerning)
 {
     RET_IF(!t, false);
+    if (t->kerning == !!kerning) return true;
     _text_dirty(t);
-
-    t->hb_features_num = 0;
-    if (t->hb_features) free(t->hb_features);
-    t->hb_features = NULL;
-
-    if (!kerning) {  // Turn off kerning
-        // Currently, I consider only one feature, kerning.
-        t->hb_features_num = 1;
-        t->hb_features = malloc(sizeof(hb_feature_t) * t->hb_features_num);
-        hb_feature_from_string("-kern", 5, &(t->hb_features[0]));
-    }
+    t->kerning = !!kerning;
     return true;
 
 }
@@ -1533,13 +1502,7 @@ bool
 _text_get_kerning(Text *t)
 {
     RET_IF(!t, false);
-    _text_dirty(t);
-    if (t->hb_features_num && t->hb_features) {
-        char buf[128];
-        hb_feature_to_string(&(t->hb_features[0]), buf, 127);
-        if (!strcmp(buf, "-kern") || !strcmp(buf, "kern=0")) return false;
-    }
-    return true;
+    return t->kerning;
 }
 
 // 0: start, 0.5: middle, 1.0: end
@@ -1547,6 +1510,7 @@ bool
 _text_set_anchor(Text *t, double anchor)
 {
     RET_IF(!t, false);
+    if (t->anchor == anchor) return true;
     _text_dirty(t);
     if (anchor < 0.) anchor = 0.;
     if (anchor > 1.) anchor = 1.;
@@ -1567,6 +1531,8 @@ bool
 _text_set_fill_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
 {
     RET_IF(!t, false);
+    if ((t->fill_r == r) && (t->fill_g == g) &&
+        (t->fill_b == b) && (t->fill_a == a)) return true;
     _text_dirty(t);
     if (r > 255) r = 255;
     if (g > 255) g = 255;
@@ -1595,6 +1561,8 @@ bool
 _text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
 {
     RET_IF(!t, false);
+    if ((t->stroke_r == r) && (t->stroke_g == g) &&
+        (t->stroke_b == b) && (t->stroke_a == a)) return true;
     _text_dirty(t);
     if (r > 255) r = 255;
     if (g > 255) g = 255;
@@ -1622,6 +1590,7 @@ bool
 _text_set_stroke_width(Text *t, double w)
 {
     RET_IF(!t, false);
+    if (t->stroke_width == w) return true;
     _text_dirty(t);
     if (w < 0.) w = 0.;
     t->stroke_width = w;
@@ -1641,6 +1610,7 @@ bool
 _text_set_letter_spacing(Text *t, int space)
 {
     RET_IF(!t, false);
+    if (t->letter_spacing == space) return true;
     _text_dirty(t);
     t->letter_spacing = space;
     return true;
@@ -1659,6 +1629,7 @@ bool
 _text_set_word_spacing(Text *t, int space)
 {
     RET_IF(!t, false);
+    if (t->word_spacing == space) return true;
     _text_dirty(t);
     t->word_spacing = space;
     return true;
@@ -1676,6 +1647,7 @@ bool
 _text_set_decoration(Text *t, unsigned int decoration)
 {
     RET_IF(!t, false);
+    if (t->decoration == decoration) return true;
     _text_dirty(t);
     if (decoration > 3) decoration = 3;
     t->decoration = decoration;
@@ -1693,8 +1665,9 @@ bool
 _text_set_ellipsis(Text *t, bool ellipsis)
 {
     RET_IF(!t, false);
+    if (t->ellipsis == !!ellipsis) return true;
     _text_dirty(t);
-    t->ellipsis = ellipsis;
+    t->ellipsis = !!ellipsis;
     return true;
 }
 
@@ -1710,6 +1683,7 @@ bool
 _text_set_wrap(Text *t, int wrap)
 {
     RET_IF(!t, false);
+    if (t->wrap == wrap) return true;
     _text_dirty(t);
     t->wrap = wrap;
     return true;
@@ -1726,6 +1700,7 @@ bool
 _text_set_width(Text *t, double width)
 {
     RET_IF(!t, false);
+    if (t->width == width) return true;
     _text_dirty(t);
     if (width < 0) width = 0;
     t->width = width;
@@ -1743,6 +1718,7 @@ bool
 _text_set_height(Text *t, double height)
 {
     RET_IF(!t, false);
+    if (t->height == height) return true;
     _text_dirty(t);
     if (height < 0) height = 0;
     t->height = height;
@@ -1767,6 +1743,7 @@ bool
 _text_set_line_space(Text *t, double line_space)
 {
     RET_IF(!t, false);
+    if (t->line_space == line_space) return true;
     _text_dirty(t);
     t->line_space = line_space;
     return true;
