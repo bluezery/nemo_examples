@@ -56,6 +56,8 @@ struct _Font {
     // Harfbuzz
     hb_font_t *hb_font;
     const char **shapers;
+
+    cairo_scaled_font_t *cairo_font;
 };
 
 struct nemolist _font_list;
@@ -127,7 +129,6 @@ struct _Text
     double line_space;
     double width, height;
     Cairo_Text **cairo_texts;
-    cairo_scaled_font_t *cairo_font;
     double cairo_scale;
 };
 
@@ -409,6 +410,7 @@ static void
 _font_destroy(Font *font)
 {
     RET_IF(!font);
+    if (font->cairo_font) cairo_scaled_font_destroy(font->cairo_font);
     if (font->hb_font) hb_font_destroy(font->hb_font);
     if (font->ft_face) FT_Done_Face(font->ft_face);
     free(font);
@@ -480,7 +482,7 @@ _font_hb_create(const char *file, unsigned int idx)
 }
 
 static cairo_scaled_font_t *
-_font_cairo_scaled_create(FT_Face ft_face, double size)
+_font_cairo_create(FT_Face ft_face, double size)
 {
     RET_IF(!ft_face, NULL);
     RET_IF(size <= 0, NULL);
@@ -531,12 +533,19 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
     Font *font;
     FT_Face ft_face;
     hb_font_t *hb_font;
+    cairo_scaled_font_t *cairo_font;
 
     ft_face = _font_ft_create(filepath, 0);
     if (!ft_face) return NULL;
 
     hb_font = _font_hb_create(filepath, idx);
     if (!hb_font) return NULL;
+
+    // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
+    // upem(Unit per em) is used for master (or Em) space.
+    // cairo font size is noralized as 1
+    cairo_font = _font_cairo_create(ft_face,
+            ft_face->units_per_EM / (double)ft_face->max_advance_height);
 
     font = (Font *)calloc(sizeof(Font), 1);
     font->filepath = strdup(filepath);
@@ -549,6 +558,7 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
     font->font_width = font_width;
     font->ft_face = ft_face;
     font->hb_font = hb_font;
+    font->cairo_font = cairo_font;
     font->shapers = NULL;  //e.g. {"ot", "fallback", "graphite2", "coretext_aat"}
 
     return font;
@@ -906,7 +916,6 @@ _text_destroy(Text *t)
 
     if (t->font_family) free(t->font_family);
     if (t->font_style) free(t->font_style);
-    if (t->cairo_font) cairo_scaled_font_destroy(t->cairo_font);
 
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
         _text_cairo_destroy((t->cairo_texts)[i]);
@@ -949,9 +958,10 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 {
     cairo_save(cr);
 
-    cairo_set_scaled_font(cr, t->cairo_font);
+    cairo_set_scaled_font(cr, t->font->cairo_font);
     cairo_set_font_size(cr,
-            t->font_size * t->font->ft_face->units_per_EM / (double)t->font->ft_face->max_advance_height);
+            t->font_size * t->font->ft_face->units_per_EM /
+            (double)t->font->ft_face->max_advance_height);
 
     cairo_font_extents_t font_extents;
     cairo_font_extents(cr, &font_extents);
@@ -1149,14 +1159,7 @@ _text_draw(Text *t, cairo_t *cr)
     t->font = _font_load(t->font_family, t->font_style, t->font_slant,
             t->font_weight, t->font_width, t->font_spacing);
 
-    if (!t->cairo_font) {
-        // Usally, upem is 1000 for OpenType Shape font, 2048 for TrueType Shape font.
-        // upem(Unit per em) is used for master (or Em) space.
-        // scale will be used for converting pixel size from EM space to user space.
-        t->cairo_font = _font_cairo_scaled_create(t->font->ft_face,
-               t->font_size * t->font->ft_face->units_per_EM / (double)t->font->ft_face->max_advance_height);
-    }
-    // because harfbuzz should be scaled up at least upem, later scaled it down as font_size.
+    // harfbuzz was scaled up as upem, scaled it down as font pixel size.
     t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
 
     // FIXME: Use cache for hb_buffer if possible
