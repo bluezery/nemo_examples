@@ -1120,7 +1120,7 @@ _text_create(const char *utf8)
     t->hb_dir = HB_DIRECTION_INVALID;
     t->hb_script = HB_SCRIPT_INVALID;
     t->hb_lang = HB_LANGUAGE_INVALID;
-    t->font_size = -1;
+    t->font_size = 12;  // default font size
     t->font_slant = -1;
     t->font_weight = -1;
     t->font_width = -1;
@@ -1139,7 +1139,6 @@ _text_draw(Text *t, cairo_t *cr)
     RET_IF(!t->utf8);
     RET_IF(!t->utf8_len);
 
-
     if (!t->dirty) goto _text_draw_again;
     t->dirty = false;
 
@@ -1151,7 +1150,6 @@ _text_draw(Text *t, cairo_t *cr)
     }
 
     // font size adjustment
-    if (t->font_size <= 0) t->font_size = 9;
     if (t->height && (t->font_size > t->height)) t->font_size = t->height;
     if (t->width && (t->font_size > t->width))   t->font_size = t->width;
 
