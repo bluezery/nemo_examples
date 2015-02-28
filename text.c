@@ -108,8 +108,8 @@ struct _Text
     int fill_r, fill_g, fill_b, fill_a; // if fill_a is 0, this will not be applied
     int stroke_r, stroke_g, stroke_b, stroke_a; // if stroke_a is 0, this will not be applied
     double stroke_width;
-    int letter_spacing;
-    int word_spacing;
+    int letter_space;
+    int word_space;
     unsigned int decoration;
 
     // fontconfig property
@@ -685,7 +685,7 @@ _text_cairo_destroy(Cairo_Text *ct)
 static Cairo_Text *
 _text_cairo_create(hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
         int from, int to, bool is_cluster, double scale, bool vertical,
-        int letter_spacing)
+        int letter_space, int word_space)
 {
     unsigned int num_glyphs;
     hb_glyph_info_t *hb_glyphs;
@@ -721,12 +721,20 @@ _text_cairo_create(hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
     if (!glyphs) return NULL;
 
     hb_position_t x = 0, y = 0;
+    int _ws = 0;
     for (i = 0, j = from ; i < num_glyphs ; i++, j++) {
         glyphs[i].index = hb_glyphs[j].codepoint;
         glyphs[i].x =  (hb_glyph_poses[j].x_offset + x) * scale;
         glyphs[i].y = (-hb_glyph_poses[j].y_offset + y) * scale;
-        if (vertical) glyphs[i].y += i * letter_spacing;
-        else          glyphs[i].x += i * letter_spacing;
+        if (vertical) {
+            glyphs[i].y += i * letter_space;
+            glyphs[i].y += _ws;
+            if (1 == hb_glyphs[j].codepoint) _ws += word_space;
+        } else {
+            glyphs[i].x += i * letter_space;
+            glyphs[i].x += _ws;
+            if (1 == hb_glyphs[j].codepoint) _ws += word_space;
+        }
         x +=  hb_glyph_poses[j].x_advance;
         y += -hb_glyph_poses[j].y_advance;
         //LOG("[%d] %d, %d", j, hb_glyph_poses[j].x_offset, hb_glyph_poses[j].x_advance);
@@ -816,7 +824,7 @@ _text_cairo_create(hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
 static int
 _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, int wrap,
         unsigned int start, double size, double *ret_size, double scale,
-        unsigned int letter_spacing)
+        int letter_space, int word_space)
 {
     RET_IF(!buffer, -1);
     RET_IF(start < 0, -1);
@@ -832,14 +840,15 @@ _text_hb_get_idx_within(hb_buffer_t *buffer, bool vertical, int wrap,
     if (!glyph_poses) return 0;
 
     for (i = start; i < num_glyphs ; i++) {
-        if (1 == info[i].codepoint) {
+        if (vertical) sz -= glyph_poses[i].y_advance * scale;
+        else          sz += (glyph_poses[i].x_advance) * scale;
+        sz += ((i - start) ? letter_space : 0);
+        if (1 == info[i].codepoint) {   // if it's apce
             last_space_idx = i;
+            sz += (i - start) ? word_space : 0;
         }
-        if (vertical) sz -= glyph_poses[i].y_advance * scale - (i ? letter_spacing : 0);
-        else          sz += (glyph_poses[i].x_advance) * scale + (i ? letter_spacing : 0);
-
         if (sz >= size) {
-            if ((wrap == 1) && (last_space_idx >= 0)) {
+            if ((wrap == 1) && (last_space_idx >= 0)) { // if word wrap, use space
                 i = last_space_idx + 1;
             }
             break;
@@ -1192,11 +1201,11 @@ _text_draw(Text *t, cairo_t *cr)
     while (1) {
         double size;
         to = _text_hb_get_idx_within(t->hb_buffer, vertical, t->wrap,
-                from, maxw, &size, t->cairo_scale, t->letter_spacing);
+                from, maxw, &size, t->cairo_scale, t->letter_space, t->word_space);
         t->cairo_texts = realloc(t->cairo_texts, sizeof(Cairo_Text *) * line_num);
         t->cairo_texts[line_num-1] = _text_cairo_create(t->hb_buffer,
                 t->utf8, t->utf8_len, from, to, true, t->cairo_scale,
-                vertical, t->letter_spacing);
+                vertical, t->letter_space, t->word_space);
         h = (line_num * t->font_size) +
             ((line_num -1 ) *t->line_space);
         if (vertical) {
@@ -1248,7 +1257,7 @@ _text_draw(Text *t, cairo_t *cr)
         _text_cairo_destroy(t->cairo_texts[line_num-1]);
         t->cairo_texts[line_num-1] = _text_cairo_create(t->hb_buffer,
                 t->utf8, t->utf8_len, from, to, true, t->cairo_scale,
-                vertical, t->letter_spacing);
+                vertical, t->letter_space, t->word_space);
     }
     if (vertical) {
         t->width = h;
@@ -1613,42 +1622,38 @@ _text_get_stroke_width(Text *t)
     return t->stroke_width;
 }
 
-// FIXME: This function is not implemented yet.
-// You should split all glyph one by one.
 bool
-_text_set_letter_spacing(Text *t, int space)
+_text_set_letter_space(Text *t, int space)
 {
     RET_IF(!t, false);
-    if (t->letter_spacing == space) return true;
+    if (t->letter_space == space) return true;
     _text_dirty(t);
-    t->letter_spacing = space;
+    t->letter_space = space;
     return true;
 }
 
 int
-_text_get_letter_spacing(Text *t)
+_text_get_letter_space(Text *t)
 {
     RET_IF(!t, 0);
-    return t->letter_spacing;
+    return t->letter_space;
 }
 
-// FIXME: This function is not implemented yet.
-// You should split all glyph one by one.
 bool
-_text_set_word_spacing(Text *t, int space)
+_text_set_word_space(Text *t, int space)
 {
     RET_IF(!t, false);
-    if (t->word_spacing == space) return true;
+    if (t->word_space == space) return true;
     _text_dirty(t);
-    t->word_spacing = space;
+    t->word_space = space;
     return true;
 }
 
 int
-_text_get_word_spacing(Text *t)
+_text_get_word_space(Text *t)
 {
     RET_IF(!t, 0);
-    return t->word_spacing;
+    return t->word_space;
 }
 
 // None: 0, Underline:1, Overline: 2, Line-through: 3
