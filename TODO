@@ -1,3 +1,6 @@
 scrolling
 resizing
-font color
+
+textviewer:
+    Add tag like CSS style (e.g. <style font-size:12;font-color:#FFFFFF> ABC </style>
+    Add CSS external style features to share styles betwen texts
