@@ -64,6 +64,8 @@ double _text_get_height(Text *t);
 unsigned int _text_get_line_num(Text *t);
 bool _text_set_line_space(Text *t, double line_space);
 double _text_get_line_space(Text *t);
+bool _text_set_font_auto_resize(Text *t, bool auto_resize);
+bool _text_get_font_auto_resize(Text *t);
 
 // You can restrict width and maximum number of line and set ellipsis.
 // if width or line is below or equal to 0, it's useless)

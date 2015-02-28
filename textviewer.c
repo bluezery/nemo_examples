@@ -110,22 +110,24 @@ int main(int argc, char *argv[])
     // Create Text
     text = (Text **)malloc(sizeof(Text *) * line_len);
     for (int i = 0 ; i < line_len ; i++) {
-        text[i] = _text_create(line_txt[i]); //NULL, NULL, NULL, NULL, line_space, 0, 3, true);
-        //_text_set_font_family(text[i], "LiberationMono");
-        _text_set_width(text[i], 150);
+        text[i] = _text_create(line_txt[i]);
+        if (!text[i]) continue;
+        _text_set_font_family(text[i], "LiberationMono");
+        _text_set_width(text[i], 700);
         //_text_set_direction(text[i], true, false);
         //_text_set_height(text[i], 80);
         //_text_set_anchor(text[i], 0.5);
         //_text_set_ellipsis(text[i], true);
         //_text_set_decoration(text[i], 3);
         //_text_set_line_space(text[i], 29);
-        _text_set_font_size(text[i], 50);
+        _text_set_font_size(text[i], 30);
+        //_text_set_font_auto_resize(text[i], true);
         _text_set_wrap(text[i], 2);
         //_text_set_stroke_color(text[i], 0, 0, 0, 255);
         //_text_set_stroke_width(text[i], 1);
         //_text_set_fill_color(text[i], 255, 0, 0, 255);
         //_text_set_letter_space(text[i], -5);
-        //_text_set_word_space(text[i], 28);
+        //_text_set_word_space(text[i], -5);
         free(line_txt[i]);
     }
     free(line_txt);
@@ -176,7 +178,7 @@ int main(int argc, char *argv[])
         cairo_save(cr);
         //_text_get_size(text[i], &tw, &th);
         cairo_rectangle(cr, 0, 0, tw, th);
-        LOG("%lf %lf", tw, th);
+        //LOG("%lf %lf", tw, th);
         cairo_move_to(cr, 100, 30);
         cairo_set_line_width(cr, 1);
         cairo_set_source_rgba(cr, 1, 0, 0, 1);

@@ -125,6 +125,7 @@ struct _Text
     bool dirty;
     bool ellipsis;
     int wrap;
+    bool auto_resize;
     int line_num;
     double line_space;
     double width, height;
@@ -645,7 +646,6 @@ _font_load(const char *font_family, const char *font_style, int font_slant, int 
         return NULL;
     }
 
-    ERR("%s", filepath);
     // CACHE POP: Search already inserted list
     nemolist_for_each(temp, &_font_list, link) {
         if (!strcmp(temp->filepath, (char *)filepath)) {
@@ -996,7 +996,6 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     for (unsigned int i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = (t->cairo_texts)[i];
-        LOG("%lf %lf", ct->width, ct->height);
 
         if (vertical) {
             if (i)
@@ -1116,20 +1115,25 @@ _text_create(const char *utf8)
 
     char *str;
     unsigned int str_len = 0;
-    str = (char *)malloc(sizeof(char) * utf8_len);
+    str = (char *)malloc(sizeof(char) * (utf8_len + 1));
     // Remove special characters (e.g. line feed, backspace, etc.)
     for (unsigned int i = 0 ; i < utf8_len ; i++) {
-        if (utf8[i] >> 31 ||
+        if ((utf8[i] >> 31) ||
             (utf8[i] > 0x1F)) { // If it is valid character
             str[str_len] = utf8[i];
             str_len++;
         }
     }
-    if (!str || str_len <=0 ) return NULL;
+    if (!str || (str_len <= 0)) {  // Add just one line
+        Text *t = calloc(sizeof(Text), 1);
+        t->line_num = 1;
+        t->dirty = true;
+        return t;    
+    }
     str = (char *)realloc(str, sizeof(char) * (str_len + 1));
     str[str_len] = '\0';
 
-    Text *t = (Text *)calloc(sizeof(Text), 1);
+    Text *t = calloc(sizeof(Text), 1);
     t->utf8 = str;
     t->utf8_len = str_len;
     t->hb_dir = HB_DIRECTION_INVALID;
@@ -1151,8 +1155,6 @@ void
 _text_draw(Text *t, cairo_t *cr)
 {
     RET_IF(!t);
-    RET_IF(!t->utf8);
-    RET_IF(!t->utf8_len);
 
     if (!t->dirty) goto _text_draw_again;
     t->dirty = false;
@@ -1162,6 +1164,15 @@ _text_draw(Text *t, cairo_t *cr)
             _text_cairo_destroy(t->cairo_texts[i]);
         }
         t->cairo_texts = NULL;
+    }
+
+    if (!t->utf8 && !t->utf8_len) { 
+        if (t->line_num) {
+            // It's just line, user should tranlate it
+            t->width = t->font_size;
+            t->height = t->font_size;
+        } else ERR("it's NULL string");
+        return;
     }
 
     // font size adjustment
@@ -1226,8 +1237,8 @@ _text_draw(Text *t, cairo_t *cr)
 
         if (h > maxh || EQUAL(h, maxh)) { // double comparison
             //LOG("exceed height");
-            if (!t->ellipsis) {
-                t->font_size -= 1; // FIXME performance issue!!
+            if (t->auto_resize && !t->ellipsis) {
+                t->font_size -= 1; // FIXME performance issue!! use binary search
                 t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
                 continue;
             }
@@ -1235,8 +1246,8 @@ _text_draw(Text *t, cairo_t *cr)
         }
         if (!t->wrap) {
             //LOG("No wrap");
-            if (!t->ellipsis) {
-                t->font_size -= 1; // FIXME performance issue!!
+            if (t->auto_resize && !t->ellipsis) {
+                t->font_size -= 1; // FIXME performance issue!! use binary search
                 t->cairo_scale = t->font_size / (double)t->font->ft_face->max_advance_height;
                 continue;
             }
@@ -1255,7 +1266,7 @@ _text_draw(Text *t, cairo_t *cr)
                 t->hb_dir, t->hb_script, t->hb_lang, t->kerning, t->font->hb_font);
         num_glyphs = hb_buffer_get_length(t->hb_buffer);
         _text_cairo_destroy(t->cairo_texts[line_num-1]);
-        t->cairo_texts[line_num-1] = _text_cairo_create(t->hb_buffer,
+        t->cairo_texts[line_num - 1] = _text_cairo_create(t->hb_buffer,
                 t->utf8, t->utf8_len, from, to, true, t->cairo_scale,
                 vertical, t->letter_space, t->word_space);
     }
@@ -1768,6 +1779,23 @@ _text_get_line_space(Text *t)
 {
     RET_IF(!t, 0);
     return t->line_space;
+}
+
+bool
+_text_set_font_auto_resize(Text *t, bool auto_resize)
+{
+    RET_IF(!t, false);
+    if (t->auto_resize == !!auto_resize) return true;
+    _text_dirty(t);
+    t->auto_resize = !!auto_resize;
+    return true;
+}
+
+bool
+_text_get_font_auto_resize(Text *t)
+{
+    RET_IF(!t, false);
+    return t->auto_resize;
 }
 
 #if 0
