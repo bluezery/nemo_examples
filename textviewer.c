@@ -119,12 +119,12 @@ int main(int argc, char *argv[])
         //_text_set_ellipsis(text[i], true);
         //_text_set_decoration(text[i], 3);
         //_text_set_line_space(text[i], 29);
-        _text_set_font_size(text[i], 25);
+        _text_set_font_size(text[i], 50);
         _text_set_wrap(text[i], 2);
         //_text_set_stroke_color(text[i], 0, 0, 0, 255);
         //_text_set_stroke_width(text[i], 1);
         //_text_set_fill_color(text[i], 255, 0, 0, 255);
-        //_text_set_letter_space(text[i], 10);
+        //_text_set_letter_space(text[i], -5);
         //_text_set_word_space(text[i], 28);
         free(line_txt[i]);
     }

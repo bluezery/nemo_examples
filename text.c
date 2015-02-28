@@ -693,11 +693,11 @@ _text_cairo_create(hb_buffer_t *hb_buffer, const char* utf8, size_t utf8_len,
     bool backward;
 
     cairo_glyph_t *glyphs;
-    unsigned int num_clusters = 0;
+    int num_clusters = 0;
     cairo_text_cluster_t *clusters = NULL;
     cairo_text_cluster_flags_t cluster_flags = 0;
-    unsigned int i = 0;
-    unsigned int j;
+    int i = 0;
+    int j;
 
     RET_IF(!hb_buffer || !utf8, NULL);
 

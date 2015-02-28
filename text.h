@@ -46,10 +46,10 @@ bool _text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned in
 void _text_get_stroke_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a);
 bool _text_set_stroke_width(Text *t, double w);
 double _text_get_stroke_width(Text *t);
-bool _text_set_letter_spacing(Text *t, int space);
-int _text_get_letter_spacing(Text *t);
-bool _text_set_word_spacing(Text *t, int space);
-int _text_get_word_spacing(Text *t);
+bool _text_set_letter_space(Text *t, int space);
+int _text_get_letter_space(Text *t);
+bool _text_set_word_space(Text *t, int space);
+int _text_get_word_space(Text *t);
 
 bool _text_set_decoration(Text *t, unsigned int decoration);
 unsigned int _text_get_decoration(Text *t);
