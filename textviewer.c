@@ -12,8 +12,32 @@
 #include "text.h"
 #include "log.h"
 
+typedef struct _ColorPattern ColorPattern;
+struct _ColorPattern
+{
+    double r;
+    double g;
+    double b;
+};
+
+typedef struct _Textviewer Textviewer;
+struct _Textviewer
+{
+    struct nemocanvas *canvas;
+    cairo_t *cr;
+    Text **text;
+    int line_len;
+    double line_space;
+    double r, g, b, a;
+};
+
+ColorPattern colors[] = {
+    {211, 212, 223}
+};
+
 char **_read_file(const char *file, int *line_len)
 {
+
     FILE *fp;
     char **line = NULL;
     int idx = 0;
@@ -43,23 +67,20 @@ char **_read_file(const char *file, int *line_len)
     return line;
 }
 
-static void _dispatch_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
+static void _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
 {
+    Textviewer *tv = nemotale_get_userdata(tale);
+    struct nemocanvas *canvas = tv->canvas;
     struct taletap *taps[16];
     int ntaps;
     ntaps = nemotale_get_taps(tale, taps, type);
-    printf("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]\n", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
+    ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
+    if (type & NEMOTALE_DOWN_EVENT) {
+        if (ntaps == 1) {
+            nemocanvas_move(canvas, taps[0]->serial);
+        }
+    }
 }
-
-typedef struct Textviewer
-{
-    struct nemocanvas *canvas;
-    cairo_t *cr;
-    Text **text;
-    int line_len;
-    double line_space;
-    double r, g, b, a;
-} Textviewer;
 
 static void _draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
 {
@@ -128,6 +149,9 @@ int main(int argc, char *argv[])
     double line_space = 0;
     int i = 0;
 
+    Textviewer *tv;
+    tv = calloc(sizeof(Textviewer), 1);
+
     if (argc != 2 || !argv[1]) {
         ERR("Usage: show [file name]");
         return 0;
@@ -157,6 +181,16 @@ int main(int argc, char *argv[])
     }
     free(line_txt);
 
+    tv->text = text;
+    tv->line_len = line_len;
+    tv->line_space = line_space;
+#if 0
+    // Pantone.color of the Year (2014)
+    tv->r = 66./255;
+    tv->g = 140./255;
+    tv->b = 240./255;
+    tv->a = 0.9;
+#endif
     struct nemotool *tool;
     struct nemocanvas *canvas;
 
@@ -165,6 +199,7 @@ int main(int argc, char *argv[])
 
     nemotool_connect_wayland(tool, NULL);
     canvas = nemocanvas_create(tool);
+    tv->canvas = canvas;
 
     nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
     nemocanvas_set_anchor(canvas, -1.0f, 0.0f);
@@ -173,9 +208,11 @@ int main(int argc, char *argv[])
     nemocanvas_flip(canvas);
     //nemocanvas_clear(canvas);
 
+
     struct nemotale *tale;
     tale = nemotale_create_pixman();
-    nemotale_attach_canvas(tale, canvas, _dispatch_event);
+    nemotale_attach_canvas(tale, canvas, _tale_event);
+    nemotale_set_userdata(tale, tv);
     nemotale_attach_pixman(tale,
             nemocanvas_get_data(canvas),
             nemocanvas_get_width(canvas),
@@ -203,17 +240,6 @@ int main(int argc, char *argv[])
     cairo_surface_t *surf;
     surf = nemotale_get_cairo(tale);
 
-    struct Textviewer *tv;
-    tv = calloc(sizeof(Textviewer), 1);
-    tv->canvas = canvas;
-    tv->text = text;
-    tv->line_len = line_len;
-    tv->line_space = line_space;
-    tv->r = 1;
-    tv->g = 1;
-    tv->b = 1;
-    tv->a = 0.5;
-
     cairo_t *cr;
     cr = cairo_create(surf);
     tv->cr = cr;
@@ -238,7 +264,7 @@ int main(int argc, char *argv[])
     nemotool_run(tool);
 
     nemotale_destroy(tale);
-
+    nemocanvas_destroy(canvas);
     nemotool_disconnect_wayland(tool);
     nemotool_destroy(tool);
 
