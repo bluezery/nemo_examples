@@ -5,8 +5,8 @@
 #include <unistd.h>
 #include <errno.h>
 
-#include <talehelper.h>
-#include <mischelper.h>
+#include "talehelper.h"
+#include "mischelper.h"
 
 void nemotale_handle_canvas_update_event(struct taletransition *trans, void *context, void *data)
 {
