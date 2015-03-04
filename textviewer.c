@@ -1,10 +1,24 @@
 // errno type
+#include <nemotale.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 
 #include <fontconfig/fontconfig.h>
 
+#include <talegl.h>
+#include <nemotool.h>
+#include <nemocanvas.h>
+#include <nemoegl.h>
+#include <nemotimer.h>
+#include <pixmanhelper.h>
+#include <mischelper.h>
+
+#include <pathshape.h>
+#include <pathstyle.h>
+#include <talemisc.h>
+
+#include "talehelper.h"
 #include "view.h"
 #include "text.h"
 #include "log.h"
@@ -78,86 +92,33 @@ char **_read_file(const char *file, int *line_len)
     return line;
 }
 
-int main(int argc, char *argv[])
+static void _dispatch_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
 {
-    Text **text;
-    char **line_txt;
-    int line_len;
+    struct taletap *taps[16];
+    int ntaps;
+    ntaps = nemotale_get_taps(tale, taps, type);
+    printf("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]\n", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
+}
 
-    if (argc != 2 || !argv[1]) {
-        ERR("Usage: show [file name]");
-        return 0;
-    }
-
-    if (!_font_init()) {
-        ERR("_font_init failed");
-        return -1;
-    }
-
-    /*
-    Font *font;
-    font = _font_load(NULL, "Bold", 70, -1, -1, -1, -1);
-    */
-
-    // Read a file
-    line_txt = _read_file(argv[1], &line_len);
-    if (!line_txt || !line_txt[0] || line_len <= 0) {
-        ERR("Err: line_txt is NULL or no string or length is 0");
-        return -1;
-    }
-
-    double line_space = 0;
-    // Create Text
-    text = (Text **)malloc(sizeof(Text *) * line_len);
-    for (int i = 0 ; i < line_len ; i++) {
-        text[i] = _text_create(line_txt[i]);
-        if (!text[i]) continue;
-        _text_set_font_family(text[i], "LiberationMono");
-        _text_set_width(text[i], 700);
-        //_text_set_direction(text[i], true, false);
-        //_text_set_height(text[i], 80);
-        //_text_set_anchor(text[i], 0.5);
-        //_text_set_ellipsis(text[i], true);
-        //_text_set_decoration(text[i], 3);
-        //_text_set_line_space(text[i], 29);
-        _text_set_font_size(text[i], 30);
-        //_text_set_font_auto_resize(text[i], true);
-        _text_set_wrap(text[i], 2);
-        //_text_set_stroke_color(text[i], 0, 0, 0, 255);
-        //_text_set_stroke_width(text[i], 1);
-        //_text_set_fill_color(text[i], 255, 0, 0, 255);
-        //_text_set_letter_space(text[i], -5);
-        //_text_set_word_space(text[i], -5);
-        free(line_txt[i]);
-    }
-    free(line_txt);
-
-    // calculate width, height
-    int w = 0, h = 0;
-    /*
-    for (int i = 0 ; i < line_len ; i++) {
-        double tw, th;
-        _text_get_size(text[i], &tw, &th);
-        if (w < tw)
-            w = tw;
-        h += th;
-    }*/
-    w = 700;
-    h = 600;
-
-    View *v;
+typedef struct Textviewer
+{
+    struct nemocanvas *canvas;
     cairo_t *cr;
-    view_init();
-    v = view_create(w, h, 255, 255, 255, 255);
-    cr = view_get_cairo(v);
+    Text **text;
+    int line_len;
+    double line_space;
+    double r, g, b, a;
+} Textviewer;
 
+static void _draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
+{
+    int i = 0;
     // Draw multiple texts
     double margin_left = 0, margin_top = 0;
     //double margin_right = 0, margin_bottom = 0;
     cairo_save(cr);
     cairo_translate(cr, margin_left, margin_top);
-    ERR("%d", line_len);
-    for (int i = 0 ; i < line_len ; i++) {
+    for (i = 0 ; i < line_len ; i++) {
         if (!text[i]) continue;
         bool vertical;
         _text_get_direction(text[i], &vertical, NULL);
@@ -189,11 +150,146 @@ int main(int argc, char *argv[])
         else cairo_translate (cr, 0, th);
     }
     cairo_restore(cr);
+}
 
-    view_do(v);
-    view_destroy(v);
+static void _timer_callback(struct nemotimer *timer, void *data)
+{
+    Textviewer *tv = data;
+    _text_set_font_size(tv->text[0], 50);
 
-    view_shutdown();
+    cairo_save (tv->cr);
+    cairo_set_source_rgba (tv->cr, tv->r, tv->g, tv->b, tv->a);
+    cairo_set_operator (tv->cr, CAIRO_OPERATOR_SOURCE);
+    cairo_paint (tv->cr);
+    cairo_restore (tv->cr);
+
+    _draw_texts(tv->cr, tv->text, tv->line_len, tv->line_space);
+    nemocanvas_damage(tv->canvas, 0, 0, 0, 0);
+    nemocanvas_commit(tv->canvas);
+}
+
+int main(int argc, char *argv[])
+{
+    Text **text;
+    char **line_txt;
+    int line_len;
+    int w = 640, h = 640;
+    double line_space = 0;
+    int i = 0;
+
+    if (argc != 2 || !argv[1]) {
+        ERR("Usage: show [file name]");
+        return 0;
+    }
+
+    if (!_font_init()) {
+        ERR("_font_init failed");
+        return -1;
+    }
+
+    // Read a file
+    line_txt = _read_file(argv[1], &line_len);
+    if (!line_txt || !line_txt[0] || line_len <= 0) {
+        ERR("Err: line_txt is NULL or no string or length is 0");
+        return -1;
+    }
+
+    text = (Text **)malloc(sizeof(Text *) * line_len);
+    for (i = 0 ; i < line_len ; i++) {
+        text[i] = _text_create(line_txt[i]);
+        if (!text[i]) continue;
+        _text_set_font_family(text[i], "LiberationMono");
+        _text_set_hint_width(text[i], w);
+        _text_set_wrap(text[i], 2);
+        _text_set_font_size(text[i], 30);
+        free(line_txt[i]);
+    }
+    free(line_txt);
+
+    struct nemotool *tool;
+    struct nemocanvas *canvas;
+
+    tool = nemotool_create();
+    if (!tool) return -1;
+
+    nemotool_connect_wayland(tool, NULL);
+    canvas = nemocanvas_create(tool);
+
+    nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
+    nemocanvas_set_anchor(canvas, -1.0f, 0.0f);
+    nemocanvas_set_size(canvas, w, h);
+    //nemocanvas_set_dispatch_resize(canvas, ..);
+    nemocanvas_flip(canvas);
+    //nemocanvas_clear(canvas);
+
+    struct nemotale *tale;
+    tale = nemotale_create_pixman();
+    nemotale_attach_canvas(tale, canvas, _dispatch_event);
+    nemotale_attach_pixman(tale,
+            nemocanvas_get_data(canvas),
+            nemocanvas_get_width(canvas),
+            nemocanvas_get_height(canvas),
+            nemocanvas_get_stride(canvas));
+
+#if 0
+    struct talemode *node;
+    node = nemotale_node_create_pixman(w, h);
+    nemotale_node_set_id(node, 1);
+    nemotale_attach_node(tale, node);
+
+    nemotale_node_get_cairo
+
+    struct pathone *one = nemotale_path_create_rect(w, h);
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.0f, 0.5f, 0.5f, 0.5f);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 0.0f, 1.0f, 1.0f, 1.0f);
+    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 1.0f);
+
+    nemotale_path_update_one(one);
+    nemotale_node_render_path(node, one);
+#endif
+
+    cairo_surface_t *surf;
+    surf = nemotale_get_cairo(tale);
+
+    struct Textviewer *tv;
+    tv = calloc(sizeof(Textviewer), 1);
+    tv->canvas = canvas;
+    tv->text = text;
+    tv->line_len = line_len;
+    tv->line_space = line_space;
+    tv->r = 1;
+    tv->g = 1;
+    tv->b = 1;
+    tv->a = 0.5;
+
+    cairo_t *cr;
+    cr = cairo_create(surf);
+    tv->cr = cr;
+
+    // background
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, tv->r, tv->g, tv->b, tv->a);
+    cairo_paint(cr);
+
+    _draw_texts(cr, text, line_len, line_space);
+
+    struct nemotimer *timer;
+    timer = nemotimer_create(tool);
+    nemotimer_set_callback(timer, _timer_callback);
+    nemotimer_set_userdata(timer, tv);
+    nemotimer_set_timeout(timer, 1000);
+
+	//nemotale_composite(tale, NULL);
+    nemocanvas_damage(canvas, 0, 0, 0, 0);
+    nemocanvas_commit(canvas);
+
+    nemotool_run(tool);
+
+    nemotale_destroy(tale);
+
+    nemotool_disconnect_wayland(tool);
+    nemotool_destroy(tool);
 
     _text_destroy(text[0]);
     free(text);

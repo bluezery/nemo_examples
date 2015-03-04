@@ -101,7 +101,7 @@ struct _Text
     hb_script_t hb_script;
     hb_language_t hb_lang;
     bool kerning;
-    Font *font;
+    MyFont *font;
 
     // CSS property
     double anchor;  // start:0, middle:0.5, 1.0:end
@@ -121,6 +121,7 @@ struct _Text
     int font_width;
     int font_spacing;
 
+    double hint_width, hint_height;
     // Drawing Texts
     bool dirty;
     bool ellipsis;
@@ -151,12 +152,14 @@ _dump_text(Text *text)
     LOG("[%d]%s", text->utf8_len, text->utf8);
     LOG("vertical:%d backward: %d", text->vertical, text->backward);
     LOG("num glyphs:[%3d]", text->num_glyphs);
-    for(int i = 0 ; i < text->num_glyphs ; i++) {
+    int i = 0;
+    for(i = 0 ; i < text->num_glyphs ; i++) {
         LOG("[%3d]: index:%6lX, x:%3.3lf y:%3.3lf", i,
             (text->glyphs)[i].index, (text->glyphs)[i].x, (text->glyphs)[i].y);
     }
     LOG("num clusters:[%3d] cluster flags[%3d]", text->num_clusters, text->cluster_flags);
-    for(int i = 0 ; i < text->num_clusters ; i++) {
+    int i = 0;
+    for(i = 0 ; i < text->num_clusters ; i++) {
         LOG("[%3d]: num_bytes:%3d, num_glyphs:%3d", i,
             (text->clusters)[i].num_bytes, (text->clusters)[i].num_glyphs);
     }
@@ -255,7 +258,7 @@ _dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
     hb_font_get_ppem(font, &x_ppem, &y_ppem);
     hb_font_get_scale(font, &x_scale, &y_scale);
     face = hb_font_get_face(font);
-    LOG("========================== Font info ===============================");
+    LOG("========================== MyFont info ===============================");
     LOG("\tx_ppem: %u, y_ppem: %u", x_ppem, y_ppem);
     LOG("\tx_scale: %d, y_scale: %d", x_scale, y_scale);
     LOG("\tidx:%u upem:%u glyph_count:%u", hb_face_get_index(face), hb_face_get_upem(face),
@@ -271,7 +274,8 @@ _dump_harfbuzz(hb_buffer_t *buffer, hb_font_t *font)
         prop.script >> 24, prop.script >> 16, prop.script >> 8, prop.script,
         hb_language_to_string(prop.language));
 
-    for (unsigned int i = 0 ; i < num_glyphs ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < num_glyphs ; i++) {
         LOG("==================== [%d] Glyph info =========================", i);
         _dump_hb_glyph(infos[i], poses[i], dir, type, font);
     }
@@ -281,7 +285,8 @@ static void
 _dump_cairo_glyph(cairo_glyph_t *glyph, unsigned int num_glyph)
 {
     LOG("========================== cairo glyphs info ===============================");
-    for (unsigned int i = 0 ; i < num_glyph ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < num_glyph ; i++) {
         LOG("[%2d] index: %6lX, x:%7.2lf y:%7.2lf",
             i, glyph[i].index, glyph[i].x, glyph[i].y);
     }
@@ -291,7 +296,8 @@ static void
 _dump_cairo_text_cluster(cairo_text_cluster_t *cluster, unsigned int num_cluster)
 {
     LOG("========================== cairo clusters info ===============================");
-    for (unsigned int i = 0 ; i < num_cluster ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < num_cluster ; i++) {
         LOG("[%2d] num_bytes: %d, num_glyphs: %d",
             i, cluster[i].num_bytes, cluster[i].num_glyphs);
     }
@@ -300,7 +306,7 @@ _dump_cairo_text_cluster(cairo_text_cluster_t *cluster, unsigned int num_cluster
 static void
 _dump_ft_face(FT_Face ft_face)
 {
-    LOG("===================== Font Face Info ==================");
+    LOG("===================== MyFont Face Info ==================");
     LOG("has vertical: %ld", FT_HAS_VERTICAL(ft_face));
     LOG("has horizontal: %ld", FT_HAS_HORIZONTAL(ft_face));
     LOG("has kerning: %ld", FT_HAS_KERNING(ft_face));
@@ -308,7 +314,7 @@ _dump_ft_face(FT_Face ft_face)
     LOG("trick: %ld", FT_IS_TRICKY(ft_face));
     LOG("scalable: %ld", FT_IS_SCALABLE(ft_face));
     LOG("fixed_width: %ld", FT_IS_FIXED_WIDTH(ft_face));
-    LOG("CID: %ld", FT_IS_CID_KEYED(ft_face)); // CID(Character Identifier Font),
+    LOG("CID: %ld", FT_IS_CID_KEYED(ft_face)); // CID(Character Identifier MyFont),
     LOG("bitmap: %ld", FT_HAS_FIXED_SIZES(ft_face));
     LOG("color: %ld", FT_HAS_COLOR(ft_face));
     LOG("multiple master: %ld", FT_HAS_MULTIPLE_MASTERS(ft_face));
@@ -408,7 +414,7 @@ _font_init()
 }
 
 static void
-_font_destroy(Font *font)
+_font_destroy(MyFont *font)
 {
     RET_IF(!font);
     if (font->cairo_font) cairo_scaled_font_destroy(font->cairo_font);
@@ -420,7 +426,7 @@ _font_destroy(Font *font)
 void
 _font_shutdown()
 {
-    Font *temp;
+    MyFont *temp;
     nemolist_for_each(temp, &_font_list, link) {
         _font_destroy(temp);
     }
@@ -524,14 +530,14 @@ _font_cairo_create(FT_Face ft_face, double size)
     return scaled_font;
 }
 
-static Font *
+static MyFont *
 _font_create(const char *filepath, unsigned int idx, const char *font_family, const char *font_style, unsigned int font_slant, unsigned int font_weight, unsigned int font_spacing, unsigned int font_width)
 
  {
     RET_IF(!filepath || !font_family || !font_style, NULL);
     RET_IF(!_file_exist(filepath), NULL);
 
-    Font *font;
+    MyFont *font;
     FT_Face ft_face;
     hb_font_t *hb_font;
     cairo_scaled_font_t *cairo_font;
@@ -548,7 +554,7 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
     cairo_font = _font_cairo_create(ft_face,
             ft_face->units_per_EM / (double)ft_face->max_advance_height);
 
-    font = (Font *)calloc(sizeof(Font), 1);
+    font = (MyFont *)calloc(sizeof(MyFont), 1);
     font->filepath = strdup(filepath);
     font->idx = idx;
     font->font_family = strdup(font_family);
@@ -571,10 +577,10 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
 // font_weight: e.g. FC_WEIGHT_LIGHT, FC_WEIGHT_REGULAR, FC_WEIGHT_BOLD, etc.
 // font_width e.g. FC_WIDTH_NORMAL, FC_WIDTH_CONDENSED, FC_WIDTH_EXPANDED, etc.
 // font_spacing e.g. FC_PROPORTIONAL, FC_MONO, etc.
-Font *
+MyFont *
 _font_load(const char *font_family, const char *font_style, int font_slant, int font_weight, int font_width, int font_spacing)
 {
-    Font *font = NULL, *temp;
+    MyFont *font = NULL, *temp;
     FcBool ret;
     FcPattern *pattern;
     FcFontSet *set;
@@ -624,7 +630,8 @@ _font_load(const char *font_family, const char *font_style, int font_slant, int 
             FcFontSetDestroy(set);
             return NULL;
         }
-        for (int i = 0 ; i < tset->nfont ; i++) {
+        int i = 0;
+        for (i = 0 ; i < tset->nfont ; i++) {
             FcPattern *temp = FcFontRenderPrepare(NULL, pattern, tset->fonts[i]);
             if (temp) FcFontSetAdd(set, temp);
         }
@@ -884,7 +891,8 @@ _text_hb_create(hb_buffer_t *_hb_buffer, const char *utf8, unsigned int utf8_len
     unsigned int num_glyphs = hb_buffer_get_length(hb_buffer);
     // Use unicode index instead of utf8 index
     hb_glyph_info_t *infos = hb_buffer_get_glyph_infos(hb_buffer, NULL);
-    for (unsigned int i = 0 ; i < num_glyphs ; i++) {
+    unsigned int i =0;
+    for (i = 0 ; i < num_glyphs ; i++) {
         infos->cluster = i;
         infos++;
     }
@@ -932,7 +940,8 @@ _text_destroy(Text *t)
     if (t->font_family) free(t->font_family);
     if (t->font_style) free(t->font_style);
 
-    for (unsigned int i = 0 ; i < t->line_num ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < t->line_num ; i++) {
         _text_cairo_destroy((t->cairo_texts)[i]);
     }
     free(t->cairo_texts);
@@ -971,6 +980,8 @@ _str_ellipsis_append(char **_str, unsigned int *_str_len, unsigned int idx)
 void
 _text_draw_cairo(cairo_t *cr, Text *t)
 {
+    if (!t->cairo_texts) return;
+
     cairo_save(cr);
 
     cairo_set_scaled_font(cr, t->font->cairo_font);
@@ -994,7 +1005,9 @@ _text_draw_cairo(cairo_t *cr, Text *t)
         cairo_translate(cr, anchor, -descent);
     }
 
-    for (unsigned int i = 0 ; i < t->line_num ; i++) {
+    ERR("%d\n", t->font_size);
+    unsigned int i = 0;
+    for (i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = (t->cairo_texts)[i];
 
         if (vertical) {
@@ -1117,7 +1130,8 @@ _text_create(const char *utf8)
     unsigned int str_len = 0;
     str = (char *)malloc(sizeof(char) * (utf8_len + 1));
     // Remove special characters (e.g. line feed, backspace, etc.)
-    for (unsigned int i = 0 ; i < utf8_len ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < utf8_len ; i++) {
         if ((utf8[i] >> 31) ||
             (utf8[i] > 0x1F)) { // If it is valid character
             str[str_len] = utf8[i];
@@ -1128,7 +1142,7 @@ _text_create(const char *utf8)
         Text *t = calloc(sizeof(Text), 1);
         t->line_num = 1;
         t->dirty = true;
-        return t;    
+        return t;
     }
     str = (char *)realloc(str, sizeof(char) * (str_len + 1));
     str[str_len] = '\0';
@@ -1160,13 +1174,13 @@ _text_draw(Text *t, cairo_t *cr)
     t->dirty = false;
 
     if (t->cairo_texts) {
-        for (unsigned int i = 0 ; i < t->line_num ; i++) {
+        unsigned int i = 0;
+        for (i = 0 ; i < t->line_num ; i++) {
             _text_cairo_destroy(t->cairo_texts[i]);
         }
         t->cairo_texts = NULL;
     }
-
-    if (!t->utf8 && !t->utf8_len) { 
+    if (!t->utf8 && !t->utf8_len) {
         if (t->line_num) {
             // It's just line, user should tranlate it
             t->width = t->font_size;
@@ -1176,8 +1190,8 @@ _text_draw(Text *t, cairo_t *cr)
     }
 
     // font size adjustment
-    if (t->height && (t->font_size > t->height)) t->font_size = t->height;
-    if (t->width && (t->font_size > t->width))   t->font_size = t->width;
+    if (t->hint_height && (t->font_size > t->hint_height)) t->font_size = t->hint_height;
+    if (t->hint_width && (t->font_size > t->hint_width))   t->font_size = t->hint_width;
 
     unsigned int num_glyphs = 0;
     t->font = _font_load(t->font_family, t->font_style, t->font_slant,
@@ -1194,14 +1208,14 @@ _text_draw(Text *t, cairo_t *cr)
     double maxw, maxh;
     bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
     if (vertical) {
-        if (t->height) maxw = t->height;
+        if (t->hint_height) maxw = t->hint_height;
         else maxw = 1410065407;
-        if (t->width) maxh = t->width;
+        if (t->hint_width) maxh = t->hint_width;
         else maxh = 1410065407;
     } else {
-        if (t->width) maxw = t->width;
+        if (t->hint_width) maxw = t->hint_width;
         else maxw = 1410065407;
-        if (t->height) maxh = t->height;
+        if (t->hint_height) maxh = t->hint_height;
         else maxh = 1410065407;
     }
 
@@ -1463,7 +1477,7 @@ _text_get_direction(Text *t, bool *vertical, bool *backward)
     } else if (t->hb_dir == HB_DIRECTION_RTL) {
         if (vertical) *vertical = false;
         if (backward) *backward = true;
-    } else if (t->hb_dir == HB_DIRECTION_LTR) {
+    } else {
         if (vertical) *vertical = false;
         if (backward) *backward = false;
     }
@@ -1722,14 +1736,40 @@ _text_get_wrap(Text *t)
 }
 
 bool
-_text_set_width(Text *t, double width)
+_text_set_hint_width(Text *t, double width)
 {
     RET_IF(!t, false);
-    if (t->width == width) return true;
+    if (t->hint_width == width) return true;
     _text_dirty(t);
     if (width < 0) width = 0;
-    t->width = width;
+    t->hint_width = width;
     return true;
+}
+
+double
+_text_get_hint_width(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->hint_width;
+}
+
+
+bool
+_text_set_hint_height(Text *t, double height)
+{
+    RET_IF(!t, false);
+    if (t->hint_height == height) return true;
+    _text_dirty(t);
+    if (height < 0) height = 0;
+    t->hint_height = height;
+    return true;
+}
+
+double
+_text_get_hint_height(Text *t)
+{
+    RET_IF(!t, 0);
+    return t->hint_height;
 }
 
 double
@@ -1737,17 +1777,6 @@ _text_get_width(Text *t)
 {
     RET_IF(!t, 0);
     return t->width;
-}
-
-bool
-_text_set_height(Text *t, double height)
-{
-    RET_IF(!t, false);
-    if (t->height == height) return true;
-    _text_dirty(t);
-    if (height < 0) height = 0;
-    t->height = height;
-    return true;
 }
 
 double
@@ -1803,7 +1832,7 @@ _text_get_font_auto_resize(Text *t)
 
 static Text *
 _create_text2(const char *utf8, const char *dir, const char *script, const char *lang,
-            const char *features, Font *font)
+            const char *features, MyFont *font)
 {
     Glyph **glyphs;
 

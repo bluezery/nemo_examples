@@ -4,12 +4,12 @@
 #include <stdbool.h>
 #include <cairo.h>
 
-typedef struct _Font Font;
+typedef struct _Font MyFont;
 typedef struct _Text Text;
 
 bool _font_init();
 void _font_shutdown();
-Font *_font_load(const char *family, const char *style, int slant, int weight, int width, int spacing);
+MyFont *_font_load(const char *family, const char *style, int slant, int weight, int width, int spacing);
 
 void _text_destroy(Text *t);
 Text *_text_create(const char *utf8);
@@ -57,9 +57,11 @@ bool _text_set_ellipsis(Text *t, bool ellipsis);
 bool _text_get_ellipsis(Text *t);
 bool _text_set_wrap(Text *t, int wrap);
 int _text_get_wrap(Text *t);
-bool _text_set_width(Text *t, double width);
+bool _text_set_hint_width(Text *t, double width);
+double _text_get_hint_width(Text *t);
+bool _text_set_hint_height(Text *t, double height);
+double _text_get_hint_height(Text *t);
 double _text_get_width(Text *t);
-bool _text_set_height(Text *t, double height);
 double _text_get_height(Text *t);
 unsigned int _text_get_line_num(Text *t);
 bool _text_set_line_space(Text *t, double line_space);
@@ -69,7 +71,7 @@ bool _text_get_font_auto_resize(Text *t);
 
 // You can restrict width and maximum number of line and set ellipsis.
 // if width or line is below or equal to 0, it's useless)
-//Text *_text_create_all(Font *font, const char *utf8, const char *dir, const char *script, const char *lang, const char *features, double line_space, double width, unsigned int line_num, bool ellipsis);
+//Text *_text_create_all(MyFont *font, const char *utf8, const char *dir, const char *script, const char *lang, const char *features, double line_space, double width, unsigned int line_num, bool ellipsis);
 void _text_draw_cairo(cairo_t *cr, Text *text);
 void _text_get_direction(Text *t, bool *vertical, bool *bacward);
 

@@ -413,7 +413,8 @@ wl_window_loop(Wl_Window *win)
             continue;
         }
         //LOG("cnt: %d", ep_cnt);
-        for (int i = 0 ; i < ep_cnt ; i++) {
+        int i = 0;
+        for (i = 0 ; i < ep_cnt ; i++) {
             //LOG("%p", ep[i].data.ptr);
             if (ep[i].data.fd == win->display_fd) {
                 if (ep[i].events & EPOLLERR || ep[i].events & EPOLLHUP) {

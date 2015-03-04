@@ -111,7 +111,8 @@ _opkg_list()
     pkg_hash_fetch_available(available);
     pkg_vec_sort(available, pkg_compare_names);
 
-    for (unsigned int i = 0; i < available->len ; i++) {
+    unsigned int i = 0;
+    for (i = 0; i < available->len ; i++) {
         pkg_t *pkg = available->pkgs[i];
         printf("pkg->name: %s\n", pkg->name);
     }
@@ -126,7 +127,8 @@ _opkg_list_installed()
     pkg_hash_fetch_all_installed(available);
     pkg_vec_sort(available, pkg_compare_names);
     LOG("%d", available->len);
-    for (unsigned int i = 0; i < available->len ; i++) {
+    unsigned int i = 0;
+    for (i = 0; i < available->len ; i++) {
         pkg_t *pkg = available->pkgs[i];
         printf("pkg->name: %s\n", pkg->name);
     }
@@ -172,7 +174,8 @@ static const char *
 _pkg_state_flag_to_str(pkg_state_flag_t state)
 {
     unsigned int len = sizeof(_pkg_state_flag_map);
-    for (unsigned int i = 0 ; i < len ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < len ; i++) {
         if (state == _pkg_state_flag_map[i].state) {
             return _pkg_state_flag_map[i].str;
         }
@@ -184,7 +187,8 @@ static const char *
 _pkg_state_want_to_str(pkg_state_want_t state)
 {
     unsigned int len = sizeof(_pkg_state_want_map);
-    for (unsigned int i = 0 ; i < len ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < len ; i++) {
         if (state == _pkg_state_want_map[i].state) {
             return _pkg_state_want_map[i].str;
         }
@@ -196,7 +200,8 @@ static const char *
 _pkg_state_status_to_str(pkg_state_status_t state)
 {
     unsigned int len = sizeof(_pkg_state_status_map);
-    for (unsigned int i = 0 ; i < len ; i++) {
+    unsigned int i = 0;
+    for (i = 0 ; i < len ; i++) {
         if (state == _pkg_state_status_map[i].state) {
             return _pkg_state_status_map[i].str;
         }

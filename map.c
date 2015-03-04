@@ -260,7 +260,8 @@ _file_download_set_fd(View *view)
         list_data_remove(curlm_fd_lists, fdh);
     }
 
-    for (int fd = 0 ; fd < max_fd ; fd++) {
+    int fd = 0;
+    for (fd = 0 ; fd < max_fd ; fd++) {
         uint32_t events = 0;
         if (FD_ISSET(fd, &fd_read)) events |= EPOLLIN;
         //if (FD_ISSET(fd, &fd_write)) events |= EPOLLOUT;

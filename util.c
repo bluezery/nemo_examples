@@ -5,6 +5,7 @@
 #include <sys/stat.h>  // mkdir, stat
 #include <sys/types.h> // mkdir, stat
 #include <libgen.h>    // dirname
+#include <stdarg.h>
 #include "log.h"
 
 #include <time.h>       // timer_create, timer_settime
@@ -13,7 +14,7 @@
 
 #include "nemolist.h"
 #include "util.h"
-#include "pixmanhelper.h"
+//#include <pixmanhelper.h>
 
 /****************************************************/
 /* String */
@@ -270,6 +271,7 @@ sigtimer_destroy(SigTimer *timer)
     free(timer);
 }
 
+#if 0
 /****************************************************/
 /* Image */
 /***************************************************/
@@ -334,3 +336,4 @@ image_destroy(Image *img)
    free(img);
 }
 
+#endif
