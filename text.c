@@ -431,7 +431,7 @@ _font_shutdown()
         _font_destroy(temp);
     }
     nemolist_empty(&_font_list);
-    if (_font_config) FcFini();
+    //if (_font_config) FcFini(); // FIXME: crash?
     _font_config = NULL;
     if (_ft_lib) FT_Done_FreeType(_ft_lib);
     _ft_lib = NULL;

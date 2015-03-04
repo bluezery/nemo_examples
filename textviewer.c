@@ -32,7 +32,8 @@ struct _Textviewer
 };
 
 ColorPattern colors[] = {
-    {211, 212, 223}
+    {211/255., 212/255., 223/255.},    // 0 Marble Swiri
+    { 66/255., 140/255., 240/255.},    // 1 Aqua Splash
 };
 
 char **_read_file(const char *file, int *line_len)
@@ -78,6 +79,16 @@ static void _tale_event(struct nemotale *tale, struct talenode *node, uint32_t t
     if (type & NEMOTALE_DOWN_EVENT) {
         if (ntaps == 1) {
             nemocanvas_move(canvas, taps[0]->serial);
+        } else if (ntaps == 2) {
+            // 1: resize, 2:rotate
+            nemocanvas_pick(canvas,
+                    taps[0]->serial,
+                    taps[1]->serial,
+                    (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
+                    (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
+        } else if (ntaps == 3) {
+            struct nemotool *tool = nemocanvas_get_tool(canvas);
+            nemotool_exit(tool);
         }
     }
 }
@@ -184,13 +195,12 @@ int main(int argc, char *argv[])
     tv->text = text;
     tv->line_len = line_len;
     tv->line_space = line_space;
-#if 0
-    // Pantone.color of the Year (2014)
-    tv->r = 66./255;
-    tv->g = 140./255;
-    tv->b = 240./255;
+
+    tv->r = colors[0].r;
+    tv->g = colors[0].g;
+    tv->b = colors[0].b;
     tv->a = 0.9;
-#endif
+
     struct nemotool *tool;
     struct nemocanvas *canvas;
 
