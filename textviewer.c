@@ -1,65 +1,16 @@
 // errno type
-#include <nemotale.h>
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include <fontconfig/fontconfig.h>
-
-#include <talegl.h>
 #include <nemotool.h>
 #include <nemocanvas.h>
-#include <nemoegl.h>
+#include <nemotale.h>
 #include <nemotimer.h>
-#include <pixmanhelper.h>
-#include <mischelper.h>
-
-#include <pathshape.h>
-#include <pathstyle.h>
-#include <talemisc.h>
-
 #include "talehelper.h"
-#include "view.h"
+
 #include "text.h"
 #include "log.h"
-
-/*
-static void
-calc_surface_size(cairo_scaled_font_t *scaled_font,
-        int line_len, cairo_glyph_line *l, double line_space,
-        double margin_left, double margin_right, double margin_top, double margin_bottom,
-        unsigned int vertical,
-        double *width, double *height)
-{
-    double w, h;
-
-    cairo_font_extents_t font_extents;
-    cairo_scaled_font_extents(scaled_font, &font_extents);
-
-    if (vertical) {
-        w  = line_len * (font_extents.height + 0) - line_space;
-        h  = 0;
-    } else {
-        h = line_len * (font_extents.height + 0) - line_space;
-        w = 0;
-    }
-    for (int i = 0 ; i < line_len ; i++) {
-        double x_advance, y_advance;
-        x_advance = l->glyphs[l->num_glyphs].x;
-        y_advance = l->glyphs[l->num_glyphs].y;
-        if (vertical)
-            h = MAX(h, y_advance);
-        else
-            w = MAX(w, x_advance);
-        l++;
-    }
-    w += margin_left + margin_right;
-    h += margin_top + margin_bottom;
-    *width = w;
-    *height = h;
-    //LOG("w:%lf h:%lf", w, h);
-}
-*/
 
 char **_read_file(const char *file, int *line_len)
 {
