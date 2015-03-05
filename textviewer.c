@@ -24,11 +24,15 @@ typedef struct _Textviewer Textviewer;
 struct _Textviewer
 {
     struct nemocanvas *canvas;
+    struct talenode *set_node;
+    struct talenode *text_node;
     cairo_t *cr;
     Text **text;
     int line_len;
     double line_space;
     double r, g, b, a;
+    struct pathone *setbtn_one;
+    struct pathone *group;
 };
 
 ColorPattern colors[] = {
@@ -36,7 +40,8 @@ ColorPattern colors[] = {
     { 66/255., 140/255., 240/255.},    // 1 Aqua Splash
 };
 
-char **_read_file(const char *file, int *line_len)
+char **
+_read_file(const char *file, int *line_len)
 {
 
     FILE *fp;
@@ -68,32 +73,8 @@ char **_read_file(const char *file, int *line_len)
     return line;
 }
 
-static void _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
-{
-    Textviewer *tv = nemotale_get_userdata(tale);
-    struct nemocanvas *canvas = tv->canvas;
-    struct taletap *taps[16];
-    int ntaps;
-    ntaps = nemotale_get_taps(tale, taps, type);
-    ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
-    if (type & NEMOTALE_DOWN_EVENT) {
-        if (ntaps == 1) {
-            nemocanvas_move(canvas, taps[0]->serial);
-        } else if (ntaps == 2) {
-            // 1: resize, 2:rotate
-            nemocanvas_pick(canvas,
-                    taps[0]->serial,
-                    taps[1]->serial,
-                    (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
-                    (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
-        } else if (ntaps == 3) {
-            struct nemotool *tool = nemocanvas_get_tool(canvas);
-            nemotool_exit(tool);
-        }
-    }
-}
-
-static void _draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
+static void
+_draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
 {
     int i = 0;
     // Draw multiple texts
@@ -117,7 +98,7 @@ static void _draw_texts(cairo_t *cr, Text **text, int line_len, double line_spac
         double tw, th;
         tw = _text_get_width(text[i]);
         th = _text_get_height(text[i]);
-#if 1
+#if 0
         // Draw text bounding box
         cairo_save(cr);
         //_text_get_size(text[i], &tw, &th);
@@ -135,6 +116,57 @@ static void _draw_texts(cairo_t *cr, Text **text, int line_len, double line_spac
     cairo_restore(cr);
 }
 
+static void
+_tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
+{
+    Textviewer *tv = nemotale_get_userdata(tale);
+    struct nemocanvas *canvas = tv->canvas;
+    struct taletap *taps[16];
+    int ntaps;
+    ntaps = nemotale_get_taps(tale, taps, type);
+    //ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
+    if (type & NEMOTALE_DOWN_EVENT) {
+        if (ntaps == 1) {
+            nemocanvas_move(canvas, taps[0]->serial);
+        } else if (ntaps == 2) {
+            // 1: resize, 2:rotate
+            nemocanvas_pick(canvas,
+                    taps[0]->serial,
+                    taps[1]->serial,
+                    (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
+                    (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
+        } else if (ntaps == 3) {
+            struct nemotool *tool = nemocanvas_get_tool(canvas);
+            nemotool_exit(tool);
+        }
+    }
+}
+
+static void
+_canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
+{
+    struct nemotale *tale  = nemocanvas_get_userdata(canvas);
+    Textviewer *tv = nemotale_get_userdata(tale);
+    ERR("%d %d", width, height);
+
+    nemocanvas_set_size(canvas, width, height);
+    nemotale_node_resize_pixman(tv->set_node, width, height);
+
+    cairo_matrix_t matrix;
+	cairo_matrix_init_scale(&matrix,
+            (double)width / 640, (double)height / 640);
+
+    nemotale_node_clear_path(tv->set_node);
+	nemotale_path_update_one(tv->group);
+	nemotale_node_render_path(tv->set_node, tv->group);
+
+	nemotale_node_damage_all(tv->set_node);
+	nemotale_composite(tale, NULL);
+
+    //nemocanvas_damage(tv->canvas, 0, 0, 0, 0);
+    //nemocanvas_commit(tv->canvas);
+}
+
 static void _timer_callback(struct nemotimer *timer, void *data)
 {
     Textviewer *tv = data;
@@ -147,6 +179,11 @@ static void _timer_callback(struct nemotimer *timer, void *data)
     cairo_restore (tv->cr);
 
     _draw_texts(tv->cr, tv->text, tv->line_len, tv->line_space);
+    nemotale_node_damage_all(tv->text_node);
+
+    ERR("%p");
+    struct nemotale *tale = nemocanvas_get_userdata(tv->canvas);
+    nemotale_composite(tale, NULL);
     nemocanvas_damage(tv->canvas, 0, 0, 0, 0);
     nemocanvas_commit(tv->canvas);
 }
@@ -156,9 +193,10 @@ int main(int argc, char *argv[])
     Text **text;
     char **line_txt;
     int line_len;
-    int w = 640, h = 640;
-    double line_space = 0;
+    int w, h;
     int i = 0;
+    //w = 640, h = 640;
+    w = 120, h = 120;
 
     Textviewer *tv;
     tv = calloc(sizeof(Textviewer), 1);
@@ -194,7 +232,7 @@ int main(int argc, char *argv[])
 
     tv->text = text;
     tv->line_len = line_len;
-    tv->line_space = line_space;
+    tv->line_space = 0;
 
     tv->r = colors[0].r;
     tv->g = colors[0].g;
@@ -202,25 +240,23 @@ int main(int argc, char *argv[])
     tv->a = 0.9;
 
     struct nemotool *tool;
-    struct nemocanvas *canvas;
-
     tool = nemotool_create();
     if (!tool) return -1;
-
     nemotool_connect_wayland(tool, NULL);
-    canvas = nemocanvas_create(tool);
-    tv->canvas = canvas;
 
+    struct nemocanvas *canvas;
+    canvas = nemocanvas_create(tool);
     nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
-    nemocanvas_set_anchor(canvas, -1.0f, 0.0f);
     nemocanvas_set_size(canvas, w, h);
-    //nemocanvas_set_dispatch_resize(canvas, ..);
+    nemocanvas_set_anchor(canvas, -1.0f, 0.0f);
+    nemocanvas_set_dispatch_resize(canvas, _canvas_resize);
     nemocanvas_flip(canvas);
     //nemocanvas_clear(canvas);
-
+    tv->canvas = canvas;
 
     struct nemotale *tale;
     tale = nemotale_create_pixman();
+    ERR("%p", tale);
     nemotale_attach_canvas(tale, canvas, _tale_event);
     nemotale_set_userdata(tale, tv);
     nemotale_attach_pixman(tale,
@@ -228,27 +264,45 @@ int main(int argc, char *argv[])
             nemocanvas_get_width(canvas),
             nemocanvas_get_height(canvas),
             nemocanvas_get_stride(canvas));
+    nemocanvas_set_userdata(canvas, tale);
 
-#if 0
-    struct talemode *node;
+    struct talenode *node;
+    // text layer
     node = nemotale_node_create_pixman(w, h);
     nemotale_node_set_id(node, 1);
     nemotale_attach_node(tale, node);
+    tv->text_node = node;
 
-    nemotale_node_get_cairo
+    // setting layer
+    node = nemotale_node_create_pixman(w, h);
+    nemotale_node_set_id(node, 2);
+    nemotale_attach_node(tale, node);
+    tv->set_node = node;
 
-    struct pathone *one = nemotale_path_create_rect(w, h);
+    struct pathone *group;
+    group = nemotale_path_create_group();
+
+    struct pathone *one;
+    double setbtn_radius = 60;
+    double setbtn_x = 550;
+    double setbtn_y = 550;
+    one = nemotale_path_create_circle(setbtn_radius);
     nemotale_path_attach_style(one, NULL);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.0f, 0.5f, 0.5f, 0.5f);
-    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 0.0f, 1.0f, 1.0f, 1.0f);
-    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 1.0f);
+    //nemotale_path_translate(one, setbtn_x, setbtn_y);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one),
+            colors[1].r, colors[1].g, colors[1].b, 0.8);
+    //nemotale_path_set_stroke_color(NTPATH_STYLE(one), 0.0f, 1.0f, 1.0f, 1.0f);
+    //nemotale_path_set_stroke_width(NTPATH_STYLE(one), 1.0f);
+    nemotale_path_attach_one(group, one);
 
-    nemotale_path_update_one(one);
-    nemotale_node_render_path(node, one);
-#endif
+    nemotale_path_update_one(group);
+    nemotale_node_render_path(node, group);
+    tv->setbtn_one = one;
+    tv->group = group;
 
     cairo_surface_t *surf;
-    surf = nemotale_get_cairo(tale);
+    //surf = nemotale_get_cairo(tale);
+    surf = nemotale_node_get_cairo(tv->text_node);
 
     cairo_t *cr;
     cr = cairo_create(surf);
@@ -259,15 +313,17 @@ int main(int argc, char *argv[])
     cairo_set_source_rgba(cr, tv->r, tv->g, tv->b, tv->a);
     cairo_paint(cr);
 
-    _draw_texts(cr, text, line_len, line_space);
+    _draw_texts(cr, text, line_len, tv->line_space);
 
+#if 0
     struct nemotimer *timer;
     timer = nemotimer_create(tool);
     nemotimer_set_callback(timer, _timer_callback);
     nemotimer_set_userdata(timer, tv);
     nemotimer_set_timeout(timer, 1000);
+#endif
 
-	//nemotale_composite(tale, NULL);
+	nemotale_composite(tale, NULL);
     nemocanvas_damage(canvas, 0, 0, 0, 0);
     nemocanvas_commit(canvas);
 
@@ -282,6 +338,7 @@ int main(int argc, char *argv[])
     free(text);
 
     _font_shutdown();
+    free(tv);
 
     return 0;
 }

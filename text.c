@@ -431,7 +431,7 @@ _font_shutdown()
         _font_destroy(temp);
     }
     nemolist_empty(&_font_list);
-    //if (_font_config) FcFini(); // FIXME: crash?
+    if (_font_config) FcFini(); // FIXME: crash?
     _font_config = NULL;
     if (_ft_lib) FT_Done_FreeType(_ft_lib);
     _ft_lib = NULL;
@@ -1005,7 +1005,6 @@ _text_draw_cairo(cairo_t *cr, Text *t)
         cairo_translate(cr, anchor, -descent);
     }
 
-    ERR("%d\n", t->font_size);
     unsigned int i = 0;
     for (i = 0 ; i < t->line_num ; i++) {
         Cairo_Text *ct = (t->cairo_texts)[i];
