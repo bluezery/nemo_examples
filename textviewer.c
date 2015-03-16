@@ -34,6 +34,8 @@ struct _Context
     Text **text;
     int line_len;
     double line_space;
+    double pos_y;
+    double event_prev_y;
 
     cairo_matrix_t matrix;
     struct pathone *group;
@@ -83,13 +85,14 @@ _read_file(const char *file, int *line_len)
 }
 
 static void
-_draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
+_draw_texts(cairo_t *cr, Text **text, int line_len, double line_space, double pos_y)
 {
     int i = 0;
     // Draw multiple texts
     double margin_left = 0, margin_top = 0;
     //double margin_right = 0, margin_bottom = 0;
     cairo_save(cr);
+    cairo_translate(cr, 0, pos_y);
     cairo_translate(cr, margin_left, margin_top);
     for (i = 0 ; i < line_len ; i++) {
         if (!text[i]) continue;
@@ -132,7 +135,7 @@ _redraw_texts(Context *ctx, cairo_surface_t *surf)
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, ctx->bg.r, ctx->bg.g, ctx->bg.b, ctx->bg.a);
     cairo_paint(cr);
-    _draw_texts(cr, ctx->text, ctx->line_len, ctx->line_space);
+    _draw_texts(cr, ctx->text, ctx->line_len, ctx->line_space, ctx->pos_y);
     cairo_destroy(cr);
 }
 
@@ -414,6 +417,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
     ntaps = nemotale_get_taps(tale, taps, type);
     //ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
     if (type & NEMOTALE_DOWN_EVENT) {
+        ctx->event_prev_y = 0;
         struct taletap *tap = nemotale_get_tap(tale, event->device, type);
         tap->item = nemotale_path_pick_one(ctx->group, event->x, event->y);
 
@@ -426,6 +430,11 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                     taps[1]->serial,
                     (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
                     (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
+        } else if (ntaps == 3) {
+            nemocanvas_pick(canvas,
+                    taps[0]->serial,
+                    taps[1]->serial,
+                    0);
         }
     } else if (nemotale_is_single_click(tale, event, type)) {
         if (ntaps == 1) {
@@ -439,6 +448,26 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
             struct nemotool *tool = nemocanvas_get_tool(canvas);
             nemotool_exit(tool);
         }
+    } else if (ntaps == 3) {
+        if (ctx->event_prev_y == 0) {
+            ctx->event_prev_y = event->y;
+            return;
+        }
+        ctx->pos_y += (event->y - ctx->event_prev_y);
+        ctx->event_prev_y = event->y;
+
+        ERR("%lf", ctx->pos_y);
+        nemotale_handle_canvas_update_event(NULL, canvas, tale);
+        nemotale_node_damage_all(ctx->set_node);
+        nemotale_path_update_one(ctx->group);
+        nemotale_node_render_path(ctx->set_node, ctx->group);
+        cairo_surface_t *surf;
+        surf = nemotale_node_get_cairo(ctx->text_node);
+        _redraw_texts(ctx, surf);
+        nemotale_composite(tale, NULL);
+        nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+    } else if (type & NEMOTALE_UP_EVENT) {
+        ctx->event_prev_y = 0;
     }
 }
 
