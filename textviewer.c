@@ -20,19 +20,28 @@ struct _ColorPattern
     double b;
 };
 
-typedef struct _Textviewer Textviewer;
-struct _Textviewer
+typedef struct _Context Context;
+struct _Context
 {
     struct nemocanvas *canvas;
     struct talenode *set_node;
     struct talenode *text_node;
-    cairo_t *cr;
+
+    int width, height;
+    struct {
+        double r, g, b, a;
+    } bg;
     Text **text;
     int line_len;
     double line_space;
-    double r, g, b, a;
-    struct pathone *setbtn_one;
+
+    cairo_matrix_t matrix;
     struct pathone *group;
+    struct pathone *btn_one, *font_family_one, *font_size_one, *font_color_one;
+    double btn_radius;
+
+    int timer_cnt;
+    double timer_diff_s;
 };
 
 ColorPattern colors[] = {
@@ -117,15 +126,297 @@ _draw_texts(cairo_t *cr, Text **text, int line_len, double line_space)
 }
 
 static void
+_redraw_texts(Context *ctx, cairo_surface_t *surf)
+{
+    cairo_t *cr = cairo_create(surf);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, ctx->bg.r, ctx->bg.g, ctx->bg.b, ctx->bg.a);
+    cairo_paint(cr);
+    _draw_texts(cr, ctx->text, ctx->line_len, ctx->line_space);
+    cairo_destroy(cr);
+}
+
+static struct nemopath *
+_path_create(double w, double h)
+{
+    struct nemopath *path;
+
+    path = nemopath_create();
+    nemopath_curve_to(path,
+            0, 10,
+            0, 0,
+            10, 0);
+    nemopath_line_to(path,
+            w, 0);
+    nemopath_curve_to(path,
+            w, 0,
+            w + 10,  0,
+            w + 10, 10);
+    nemopath_line_to(path,
+            w + 10, h + 10);
+    nemopath_curve_to(path,
+            w + 10, h + 10,
+            w + 10, h + 20,
+            w, h + 20);
+    nemopath_line_to(path,
+            10, h + 20);
+    nemopath_curve_to(path,
+            10, h + 20,
+            0, h + 20,
+            0, h + 10);
+    nemopath_close_path(path);
+    /*
+    nemopath_scale(path, scale, scale);
+    nemopath_translate(path, x, y);
+    */
+
+    return path;
+}
+
+static void
+_font_menu_animator(struct nemotimer *timer, void *data)
+{
+    Context *ctx = data;
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    struct nemotale *tale  = nemocanvas_get_userdata(canvas);
+    int w = ctx->width;
+    int h = ctx->height;
+
+    ctx->timer_cnt++;
+    nemotale_handle_canvas_update_event(NULL, canvas, tale);
+
+    struct nemopath *path;
+    double scale = 0.1 + ctx->timer_diff_s * ctx->timer_cnt;
+
+    nemotale_path_scale(ctx->font_family_one, scale, scale);
+    nemotale_path_scale(ctx->font_size_one, scale, scale);
+    nemotale_path_scale(ctx->font_color_one, scale, scale);
+
+    nemotale_node_clear_path(ctx->set_node);
+	nemotale_node_damage_all(ctx->set_node);
+	nemotale_path_update_one(ctx->group);
+	nemotale_node_render_path(ctx->set_node, ctx->group);
+
+	nemotale_composite(tale, NULL);
+    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+
+    if (ctx->timer_cnt < 60)  {
+        nemotimer_set_timeout(timer, 1000.0/60);
+    } else
+        ctx->timer_cnt = 0;
+}
+
+static void
+_transform_event(struct taletransition *trans, void *context, void *data)
+{
+	struct pathone *one = (struct pathone *)data;
+
+	nemotale_path_transform_dirty(one);
+}
+static void
+_font_menu_animation(Context *ctx)
+{
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    struct nemotale *tale  = nemocanvas_get_userdata(canvas);
+    struct taletransition *trans;
+
+#if 1
+    trans = nemotale_transition_create(0, 1200);
+    nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            nemotale_handle_canvas_update_event, canvas, tale);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            nemotale_node_handle_path_damage_event, ctx->set_node, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_damage_event, ctx->set_node, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            _transform_event, NULL, ctx->font_family_one);
+    /*
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_transform_event, NULL, ctx->font_family_one);
+            */
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_update_event, NULL, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_render_event, ctx->set_node, ctx->group);
+
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_composite_event, tale, NULL);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_canvas_flush_event, canvas, tale);
+
+    nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->group));
+    nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->font_family_one));
+
+    /*
+    nemotale_transition_attach_dattr(trans, NTPATH_ATWIDTH(ctx->font_family_one),
+            1.0f, 1000);
+    */
+    nemotale_dispatch_transition_timer_event(tool, trans);
+#else
+
+    ctx->timer_diff_s = 0.9/60.0;
+
+    struct nemotimer *timer = nemotimer_create(tool);
+    nemotimer_set_timeout(timer, 1000.0/60);
+    nemotimer_set_userdata(timer, ctx);
+    nemotimer_set_callback(timer, _font_menu_animator);
+    ctx->timer_cnt = 0;
+#endif
+}
+
+static void
+nemotemp_handle_canvas_end_event(struct taletransition *trans, void *_context, void *_data)
+{
+    Context *ctx = _context;
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotale *tale = nemocanvas_get_userdata(canvas);
+
+    nemotale_handle_canvas_update_event(NULL, canvas, tale);
+
+    double w = nemotale_get_width(tale);
+    double h = nemotale_get_height(tale);
+    struct pathone *one;
+    struct nemopath *path;
+    double scale = 0.1;
+
+    path = _path_create(300, 100);
+    one = nemotale_path_create_path(NULL);
+    nemotale_path_set_id(one, "font_family");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one),
+            colors[1].r, colors[1].g, colors[1].b, 0.8);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 1.0f);
+    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 0.1f);
+    nemotale_path_use_path(one, path);
+    nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
+    nemotale_path_set_pivot(one, 0.5, 1);
+    nemotale_path_scale(one, scale, scale);
+    nemotale_path_translate(one, w/2 - 150, h/2 -100);
+    nemotale_path_attach_one(ctx->group, one);
+    ctx->font_family_one = one;
+
+    path = _path_create(140, 100);
+
+    one = nemotale_path_create_path(NULL);
+    nemotale_path_set_id(one, "font_size");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one),
+            colors[1].r, colors[1].g, colors[1].b, 0.8);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 1.0f);
+    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 0.1f);
+    nemotale_path_use_path(one, path);
+    nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
+    nemotale_path_set_pivot(one, 1, 0);
+    nemotale_path_scale(one, scale, scale);
+    nemotale_path_translate(one, w/2 - 150, h/2 + 30);
+    nemotale_path_attach_one(ctx->group, one);
+    ctx->font_size_one = one;
+
+    path = _path_create(140, 100);
+    one = nemotale_path_create_path(NULL);
+    nemotale_path_set_id(one, "font_color");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one),
+            colors[1].r, colors[1].g, colors[1].b, 0.8);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 1.0f);
+    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 0.1f);
+    nemotale_path_use_path(one, path);
+    nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
+    nemotale_path_set_pivot(one, 0, 0);
+    nemotale_path_scale(one, scale, scale);
+    nemotale_path_translate(one, w/2 + 10, h/2 + 30);
+    nemotale_path_attach_one(ctx->group, one);
+    ctx->font_color_one = one;
+
+    nemotale_path_destroy_one(ctx->btn_one);
+    nemotale_node_clear_path(ctx->set_node);
+	nemotale_node_damage_all(ctx->set_node);
+    nemotale_path_update_one(ctx->group);
+    nemotale_node_render_path(ctx->set_node, ctx->group);
+
+	nemotale_composite(tale, NULL);
+    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+
+    _font_menu_animation(ctx);
+}
+
+static void
+_animation(Context *ctx)
+{
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    struct nemotale *tale  = nemocanvas_get_userdata(canvas);
+    struct taletransition *trans;
+    trans = nemotale_transition_create(0, 1200);
+    nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
+
+    /*
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_START,
+            nemotemp_handle_canvas_start_event, ctx, NULL);*/
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            nemotale_handle_canvas_update_event, canvas, tale);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            nemotale_node_handle_path_damage_event, ctx->set_node, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_damage_event, ctx->set_node, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_transform_event, NULL, ctx->btn_one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_update_event, NULL, ctx->group);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_render_event, ctx->set_node, ctx->group);
+
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_composite_event, tale, NULL);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_canvas_flush_event, canvas, tale);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_END,
+            nemotemp_handle_canvas_end_event, ctx, NULL);
+
+    nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->group));
+
+    nemotale_transition_attach_dattr(trans, NTPATH_TRANSFORM_ATX(ctx->btn_one),
+            1.0f, ctx->width/2 - ctx->btn_radius);
+    nemotale_transition_attach_dattr(trans, NTPATH_TRANSFORM_ATY(ctx->btn_one),
+            1.0f, ctx->height/2 - ctx->btn_radius);
+    nemotale_dispatch_transition_timer_event(tool, trans);
+}
+
+static void
 _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
 {
-    Textviewer *tv = nemotale_get_userdata(tale);
-    struct nemocanvas *canvas = tv->canvas;
+    Context *ctx = nemotale_get_userdata(tale);
+    struct nemocanvas *canvas = ctx->canvas;
     struct taletap *taps[16];
     int ntaps;
     ntaps = nemotale_get_taps(tale, taps, type);
     //ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
     if (type & NEMOTALE_DOWN_EVENT) {
+        struct taletap *tap = nemotale_get_tap(tale, event->device, type);
+        tap->item = nemotale_path_pick_one(ctx->group, event->x, event->y);
+
         if (ntaps == 1) {
             nemocanvas_move(canvas, taps[0]->serial);
         } else if (ntaps == 2) {
@@ -135,6 +426,15 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                     taps[1]->serial,
                     (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
                     (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
+        }
+    } else if (nemotale_is_single_click(tale, event, type)) {
+        if (ntaps == 1) {
+            struct taletap *tap = nemotale_get_tap(tale, event->device, type);
+            struct pathone *one = tap->item;
+            if (one && !strcmp(NTPATH_ID(one), "btn")) {
+                _animation(ctx);
+            }
+
         } else if (ntaps == 3) {
             struct nemotool *tool = nemocanvas_get_tool(canvas);
             nemotool_exit(tool);
@@ -146,46 +446,31 @@ static void
 _canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
 {
     struct nemotale *tale  = nemocanvas_get_userdata(canvas);
-    Textviewer *tv = nemotale_get_userdata(tale);
-    ERR("%d %d", width, height);
+    Context *ctx = nemotale_get_userdata(tale);
 
     nemocanvas_set_size(canvas, width, height);
-    nemotale_node_resize_pixman(tv->set_node, width, height);
+    nemotale_handle_canvas_update_event(NULL, canvas, tale);
 
     cairo_matrix_t matrix;
+    // set btn
+    nemotale_node_resize_pixman(ctx->set_node, width, height);
 	cairo_matrix_init_scale(&matrix,
-            (double)width / 640, (double)height / 640);
+            (double)width / ctx->width, (double)height / ctx->height);
 
-    nemotale_node_clear_path(tv->set_node);
-	nemotale_path_update_one(tv->group);
-	nemotale_node_render_path(tv->set_node, tv->group);
+    nemotale_node_clear_path(ctx->set_node);
+	nemotale_node_damage_all(ctx->set_node);
+    nemotale_path_set_parent_transform(ctx->group, &matrix);
+	nemotale_path_update_one(ctx->group);
+	nemotale_node_render_path(ctx->set_node, ctx->group);
 
-	nemotale_node_damage_all(tv->set_node);
+    // Text layer
+    nemotale_node_resize_pixman(ctx->text_node, width, height);
+    cairo_surface_t *surf;
+    surf = nemotale_node_get_cairo(ctx->text_node);
+    _redraw_texts(ctx, surf);
+
 	nemotale_composite(tale, NULL);
-
-    //nemocanvas_damage(tv->canvas, 0, 0, 0, 0);
-    //nemocanvas_commit(tv->canvas);
-}
-
-static void _timer_callback(struct nemotimer *timer, void *data)
-{
-    Textviewer *tv = data;
-    _text_set_font_size(tv->text[0], 50);
-
-    cairo_save (tv->cr);
-    cairo_set_source_rgba (tv->cr, tv->r, tv->g, tv->b, tv->a);
-    cairo_set_operator (tv->cr, CAIRO_OPERATOR_SOURCE);
-    cairo_paint (tv->cr);
-    cairo_restore (tv->cr);
-
-    _draw_texts(tv->cr, tv->text, tv->line_len, tv->line_space);
-    nemotale_node_damage_all(tv->text_node);
-
-    ERR("%p");
-    struct nemotale *tale = nemocanvas_get_userdata(tv->canvas);
-    nemotale_composite(tale, NULL);
-    nemocanvas_damage(tv->canvas, 0, 0, 0, 0);
-    nemocanvas_commit(tv->canvas);
+    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 }
 
 int main(int argc, char *argv[])
@@ -195,11 +480,12 @@ int main(int argc, char *argv[])
     int line_len;
     int w, h;
     int i = 0;
-    //w = 640, h = 640;
-    w = 120, h = 120;
+    w = 640, h = 640;
 
-    Textviewer *tv;
-    tv = calloc(sizeof(Textviewer), 1);
+    Context *ctx;
+    ctx = calloc(sizeof(Context), 1);
+    ctx->width = w;
+    ctx->height = h;
 
     if (argc != 2 || !argv[1]) {
         ERR("Usage: show [file name]");
@@ -230,102 +516,84 @@ int main(int argc, char *argv[])
     }
     free(line_txt);
 
-    tv->text = text;
-    tv->line_len = line_len;
-    tv->line_space = 0;
+    ctx->text = text;
+    ctx->line_len = line_len;
+    ctx->line_space = 0;
 
-    tv->r = colors[0].r;
-    tv->g = colors[0].g;
-    tv->b = colors[0].b;
-    tv->a = 0.9;
+    ctx->bg.r = colors[0].r;
+    ctx->bg.g = colors[0].g;
+    ctx->bg.b = colors[0].b;
+    ctx->bg.a = 0.9;
 
     struct nemotool *tool;
     tool = nemotool_create();
-    if (!tool) return -1;
     nemotool_connect_wayland(tool, NULL);
 
     struct nemocanvas *canvas;
     canvas = nemocanvas_create(tool);
-    nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
     nemocanvas_set_size(canvas, w, h);
-    nemocanvas_set_anchor(canvas, -1.0f, 0.0f);
+    nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
+    nemocanvas_set_anchor(canvas, -0.5f, 0.5f);
     nemocanvas_set_dispatch_resize(canvas, _canvas_resize);
-    nemocanvas_flip(canvas);
-    //nemocanvas_clear(canvas);
-    tv->canvas = canvas;
+    ctx->canvas = canvas;
 
     struct nemotale *tale;
     tale = nemotale_create_pixman();
-    ERR("%p", tale);
     nemotale_attach_canvas(tale, canvas, _tale_event);
-    nemotale_set_userdata(tale, tv);
-    nemotale_attach_pixman(tale,
-            nemocanvas_get_data(canvas),
-            nemocanvas_get_width(canvas),
-            nemocanvas_get_height(canvas),
-            nemocanvas_get_stride(canvas));
-    nemocanvas_set_userdata(canvas, tale);
+    nemotale_set_userdata(tale, ctx);
+
+	nemocanvas_flip(canvas);
+	nemocanvas_clear(canvas);
+	nemotale_attach_pixman(tale,
+			nemocanvas_get_data(canvas),
+			nemocanvas_get_width(canvas),
+			nemocanvas_get_height(canvas),
+			nemocanvas_get_stride(canvas));
 
     struct talenode *node;
     // text layer
     node = nemotale_node_create_pixman(w, h);
     nemotale_node_set_id(node, 1);
     nemotale_attach_node(tale, node);
-    tv->text_node = node;
+    ctx->text_node = node;
 
     // setting layer
     node = nemotale_node_create_pixman(w, h);
     nemotale_node_set_id(node, 2);
     nemotale_attach_node(tale, node);
-    tv->set_node = node;
+    ctx->set_node = node;
 
     struct pathone *group;
     group = nemotale_path_create_group();
+    ctx->group = group;
 
     struct pathone *one;
-    double setbtn_radius = 60;
-    double setbtn_x = 550;
-    double setbtn_y = 550;
-    one = nemotale_path_create_circle(setbtn_radius);
+    double btn_radius = 50;
+    double setbtn_x = w - btn_radius * 2 - 10;
+    double setbtn_y = h - btn_radius * 2- 10;
+    ctx->btn_radius = btn_radius;
+
+    one = nemotale_path_create_circle(btn_radius);
+    nemotale_path_set_id(one, "btn");
     nemotale_path_attach_style(one, NULL);
-    //nemotale_path_translate(one, setbtn_x, setbtn_y);
+    nemotale_path_translate(one, setbtn_x, setbtn_y);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),
             colors[1].r, colors[1].g, colors[1].b, 0.8);
-    //nemotale_path_set_stroke_color(NTPATH_STYLE(one), 0.0f, 1.0f, 1.0f, 1.0f);
-    //nemotale_path_set_stroke_width(NTPATH_STYLE(one), 1.0f);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 1.0f);
+    nemotale_path_set_stroke_width(NTPATH_STYLE(one), 1.0f);
     nemotale_path_attach_one(group, one);
+    ctx->btn_one = one;
 
     nemotale_path_update_one(group);
     nemotale_node_render_path(node, group);
-    tv->setbtn_one = one;
-    tv->group = group;
 
     cairo_surface_t *surf;
-    //surf = nemotale_get_cairo(tale);
-    surf = nemotale_node_get_cairo(tv->text_node);
+    surf = nemotale_node_get_cairo(ctx->text_node);
 
-    cairo_t *cr;
-    cr = cairo_create(surf);
-    tv->cr = cr;
-
-    // background
-    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-    cairo_set_source_rgba(cr, tv->r, tv->g, tv->b, tv->a);
-    cairo_paint(cr);
-
-    _draw_texts(cr, text, line_len, tv->line_space);
-
-#if 0
-    struct nemotimer *timer;
-    timer = nemotimer_create(tool);
-    nemotimer_set_callback(timer, _timer_callback);
-    nemotimer_set_userdata(timer, tv);
-    nemotimer_set_timeout(timer, 1000);
-#endif
+    _redraw_texts(ctx, surf);
 
 	nemotale_composite(tale, NULL);
-    nemocanvas_damage(canvas, 0, 0, 0, 0);
-    nemocanvas_commit(canvas);
+    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
     nemotool_run(tool);
 
@@ -338,7 +606,7 @@ int main(int argc, char *argv[])
     free(text);
 
     _font_shutdown();
-    free(tv);
+    free(ctx);
 
     return 0;
 }

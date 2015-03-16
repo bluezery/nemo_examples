@@ -10,8 +10,8 @@ ASST=mischelper glhelper fbohelper
 ## ecore ecore-evas evas
 LIB=util.o talehelper.o cairo_view.o wl_window.o view.o text.o #$(ASST)
 
-all: nemotest nemotest_egl
-	##textviewer pkgmanager wayland
+all: nemotest nemotest2 textviewer
+	##pkgmanager wayland
 
 #asst:
 #	for i in $(ASST) \
@@ -22,6 +22,10 @@ nemotest_egl: nemotest_egl.c $(LIB)
 	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
 
 nemotest: nemotest.c $(LIB)
+	$(CC) -g -c $@.c $(CFLAGS)
+	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
+
+nemotest2: nemotest2.c $(LIB)
 	$(CC) -g -c $@.c $(CFLAGS)
 	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
 
