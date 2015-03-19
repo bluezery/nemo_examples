@@ -13,6 +13,7 @@ bool _file_is_dir(const char *file);
 bool _file_exist(const char *file);
 bool _file_mkdir(const char *dir, int mode);
 bool _file_mkdir_recursive(const char *file, int mode);
+char **_file_load(const char *filename, int *line_len);
 
 // Timer (implemented by signal)
 typedef bool (*SigTimerCb)(void *data);

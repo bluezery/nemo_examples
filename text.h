@@ -40,10 +40,10 @@ void _text_get_direction(Text *t, bool *vertical, bool *backward); //
 bool _text_set_anchor(Text *t, double anchor);
 double _text_get_anchor(Text *t);
 
-bool _text_set_fill_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a);
-void _text_get_fill_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a);
-bool _text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a);
-void _text_get_stroke_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a);
+bool _text_set_fill_color(Text *t, double r, double g, double b, double a);
+void _text_get_fill_color(Text *t, double *r, double *g, double *b, double *a);
+bool _text_set_stroke_color(Text *t, double r, double g, double b, double a);
+void _text_get_stroke_color(Text *t, double *r, double *g, double *b, double *a);
 bool _text_set_stroke_width(Text *t, double w);
 double _text_get_stroke_width(Text *t);
 bool _text_set_letter_space(Text *t, int space);

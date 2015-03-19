@@ -156,6 +156,39 @@ _file_mkdir_recursive(const char *file, int mode)
     return true;
 }
 
+char **
+_file_load(const char *file, int *line_len)
+{
+
+    FILE *fp;
+    char **line = NULL;
+    int idx = 0;
+    char *buffer = NULL;
+    size_t buffer_len;
+
+    RET_IF(!file || !line_len, NULL);
+
+    fp = fopen(file, "r");
+    if (!fp) {
+        ERR("%s", strerror(errno));
+        return NULL;
+    }
+
+    buffer_len = 2048; // adequate size for normal file case.
+    buffer = (char *)malloc(sizeof(char) * buffer_len);
+
+    while (getline(&buffer, &buffer_len, fp) >= 0) {
+        line = (char **)realloc(line, sizeof(char *) * (idx + 1));
+        line[idx] = strdup(buffer);
+        idx++;
+    }
+    *line_len = idx;
+
+    free(buffer);
+    fclose(fp);
+    return line;
+}
+
 /****************************************************/
 /* Timer (signal implemented */
 /***************************************************/

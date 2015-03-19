@@ -1,3 +1,6 @@
+// DBL_MAX
+#include <float.h>
+
 // open
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -105,8 +108,8 @@ struct _Text
 
     // CSS property
     double anchor;  // start:0, middle:0.5, 1.0:end
-    int fill_r, fill_g, fill_b, fill_a; // if fill_a is 0, this will not be applied
-    int stroke_r, stroke_g, stroke_b, stroke_a; // if stroke_a is 0, this will not be applied
+    double fill_r, fill_g, fill_b, fill_a; // if fill_a is 0, this will not be applied
+    double stroke_r, stroke_g, stroke_b, stroke_a; // if stroke_a is 0, this will not be applied
     double stroke_width;
     int letter_space;
     int word_space;
@@ -1041,15 +1044,15 @@ _text_draw_cairo(cairo_t *cr, Text *t)
         if (t->fill_a > 0) {
             cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
             cairo_set_source_rgba (cr,
-                    t->fill_r/255., t->fill_g/255.,
-                    t->fill_b/255., t->fill_a/255.);
+                    t->fill_r, t->fill_g,
+                    t->fill_b, t->fill_a);
             cairo_fill (cr);
         }
         if (t->stroke_a > 0) {
             cairo_glyph_path (cr, ct->glyphs, ct->num_glyphs);
             cairo_set_source_rgba (cr,
-                    t->stroke_r/255., t->stroke_g/255.,
-                    t->stroke_b/255., t->stroke_a/255.);
+                    t->stroke_r, t->stroke_g,
+                    t->stroke_b, t->stroke_a);
             cairo_set_line_width (cr, t->stroke_width);
             cairo_stroke(cr);
         }
@@ -1208,14 +1211,14 @@ _text_draw(Text *t, cairo_t *cr)
     bool vertical = HB_DIRECTION_IS_VERTICAL(t->hb_dir);
     if (vertical) {
         if (t->hint_height) maxw = t->hint_height;
-        else maxw = 1410065407;
+        else maxw = DBL_MAX;
         if (t->hint_width) maxh = t->hint_width;
-        else maxh = 1410065407;
+        else maxh = DBL_MAX;
     } else {
         if (t->hint_width) maxw = t->hint_width;
-        else maxw = 1410065407;
+        else maxw = DBL_MAX;
         if (t->hint_height) maxh = t->hint_height;
-        else maxh = 1410065407;
+        else maxh = DBL_MAX;
     }
 
     int line_num = 1;
@@ -1570,16 +1573,16 @@ _text_get_anchor(Text *t)
 
 // If alpha is 0, unfill
 bool
-_text_set_fill_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
+_text_set_fill_color(Text *t, double r, double g, double b, double a)
 {
     RET_IF(!t, false);
-    if ((t->fill_r == r) && (t->fill_g == g) &&
-        (t->fill_b == b) && (t->fill_a == a)) return true;
+    if (EQUAL(t->fill_r, r) && EQUAL(t->fill_g, g) &&
+        EQUAL(t->fill_b, b) && EQUAL(t->fill_a, a)) return true;
     _text_dirty(t);
-    if (r > 255) r = 255;
-    if (g > 255) g = 255;
-    if (b > 255) b = 255;
-    if (a > 255) a = 255;
+    if (r > 1) r = 1;
+    if (g > 1) g = 1;
+    if (b > 1) b = 1;
+    if (a > 1) a = 1;
     t->fill_r = r;
     t->fill_g = g;
     t->fill_b = b;
@@ -1589,7 +1592,7 @@ _text_set_fill_color(Text *t, unsigned int r, unsigned int g, unsigned int b, un
 }
 
 void
-_text_get_fill_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a)
+_text_get_fill_color(Text *t, double *r, double *g, double *b, double *a)
 {
     RET_IF(!t);
     if (r) *r = t->fill_r;
@@ -1600,16 +1603,16 @@ _text_get_fill_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b,
 
 // If alpha is 0, unset storke
 bool
-_text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned int b, unsigned int a)
+_text_set_stroke_color(Text *t, double r, double g, double b, double a)
 {
     RET_IF(!t, false);
-    if ((t->stroke_r == r) && (t->stroke_g == g) &&
-        (t->stroke_b == b) && (t->stroke_a == a)) return true;
+    if (EQUAL(t->stroke_r, r) && EQUAL(t->stroke_g, g) &&
+        EQUAL(t->stroke_b, b) && EQUAL(t->stroke_a, a)) return true;
     _text_dirty(t);
-    if (r > 255) r = 255;
-    if (g > 255) g = 255;
-    if (b > 255) b = 255;
-    if (a > 255) a = 255;
+    if (r > 1) r = 1;
+    if (g > 1) g = 1;
+    if (b > 1) b = 1;
+    if (a > 1) a = 1;
     t->stroke_r = r;
     t->stroke_g = g;
     t->stroke_b = b;
@@ -1619,7 +1622,7 @@ _text_set_stroke_color(Text *t, unsigned int r, unsigned int g, unsigned int b, 
 }
 
 void
-_text_get_stroke_color(Text *t, unsigned int *r, unsigned int *g, unsigned int *b, unsigned int *a)
+_text_get_stroke_color(Text *t, double *r, double *g, double *b, double *a)
 {
     RET_IF(!t);
     if (r) *r = t->stroke_r;
