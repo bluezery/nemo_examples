@@ -3,13 +3,17 @@
 
 #include <stdbool.h>
 #include <cairo.h>
+#include "util.h"
 
 typedef struct _Font MyFont;
 typedef struct _Text Text;
 
 bool _font_init();
 void _font_shutdown();
+List *_font_list_get(int *num);
 MyFont *_font_load(const char *family, const char *style, int slant, int weight, int width, int spacing);
+const char *_font_family_get(MyFont *font);
+const char *_font_style_get(MyFont *font);
 
 void _text_destroy(Text *t);
 Text *_text_create(const char *utf8);

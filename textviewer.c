@@ -101,6 +101,8 @@ struct _TextArea
     Text **texts;
     int len;
     struct {
+        double x;
+        double y;
         double w;
         double h;
     } content;
@@ -114,6 +116,7 @@ struct _TextArea
     } margin;
     struct {
         char *family;
+        char *style;
         int size;
         Color color;
     } font;
@@ -123,8 +126,9 @@ struct _TextArea
     // Common
     Color bg_color;
     double bg_alpha;
-    int x, y, w, h;
     bool dirty;
+
+    int w, h;
 };
 
 TextArea *
@@ -180,6 +184,21 @@ _textarea_font_family_get(TextArea *ta)
 {
     RET_IF(!ta, NULL);
     return ta->font.family;
+}
+
+void
+_textarea_font_style_set(TextArea *ta, const char *style)
+{
+    RET_IF(!ta);
+    RET_IF(!style);
+    ta->font.style = strdup(style);
+}
+
+const char *
+_textarea_font_style_get(TextArea *ta)
+{
+    RET_IF(!ta, NULL);
+    return ta->font.style;
 }
 
 void
@@ -258,27 +277,41 @@ _textarea_margin_get(TextArea *ta, int *margin_left, int *margin_top, int *margi
 }
 
 void
-_textarea_geometry_get(TextArea *ta, int *x, int *y, int *h, int *w)
+_textarea_scroll(TextArea *ta, int x, int y)
 {
     RET_IF(!ta);
-    if (x) *x = ta->x;
-    if (y) *y = ta->y;
-    if (w) *w = ta->w;
-    if (h) *h = ta->h;
+
+    ta->content.x += x;
+    ta->content.y += y;
+
+    if (ta->content.y >= 0)
+        ta->content.y = 0;
+    else if (ta->content.h <= ta->h)
+        ta->content.y = 0;
+    else if (ta->content.y <= -(ta->content.h - ta->h))
+        ta->content.y = -(ta->content.h - ta->h);
+
+    if (ta->content.x >= 0)
+        ta->content.x = 0;
+    else if (ta->content.w <= ta->w)
+        ta->content.x = 0;
+    else if (ta->content.x <= -(ta->content.w - ta->w))
+        ta->content.x = -(ta->content.w - ta->w);
 }
 
 void
-_textarea_move(TextArea *ta, int x, int y)
+_textarea_content_pos_get(TextArea *ta, int *x, int *y)
 {
     RET_IF(!ta);
-    ta->x = x;
-    ta->y = y;
+    if (x) *x = ta->content.x;
+    if (y) *y = ta->content.y;
 }
 
 void
-_textare_resize(TextArea *ta, int w, int h)
+_textarea_resize(TextArea *ta, int w, int h)
 {
     RET_IF(!ta);
+
     ta->w = w;
     ta->h = h;
 }
@@ -337,8 +370,12 @@ _textarea_render(TextArea *ta)
 
     int i = 0;
     for (i = 0 ; i < ta->len ; i++) {
-        if (ta->font.family) _text_set_font_family(ta->texts[i], ta->font.family);
-        if (ta->font.size > 0) _text_set_font_size(ta->texts[i], ta->font.size);
+        if (ta->font.family)
+            _text_set_font_family(ta->texts[i], ta->font.family);
+        if (ta->font.style)
+            _text_set_font_style(ta->texts[i], ta->font.style);
+        if (ta->font.size > 0)
+            _text_set_font_size(ta->texts[i], ta->font.size);
         if (ta->font.color.a > 0)
             _text_set_fill_color(ta->texts[i],
                     ta->font.color.r, ta->font.color.g,
@@ -351,8 +388,8 @@ _textarea_render(TextArea *ta)
     cairo_set_source_rgba(cr,
             ta->bg_color.r, ta->bg_color.g, ta->bg_color.b, ta->bg_color.a);
     cairo_paint(cr);
-
-    _texts_draw(ta->texts, ta->len, ta->line_space, cr, ta->x, ta->y,
+    _texts_draw(ta->texts, ta->len, ta->line_space, cr,
+            ta->content.x, ta->content.y,
             ta->margin.left, ta->margin.top, &(ta->content.w), &(ta->content.h));
     cairo_destroy(cr);
 }
@@ -386,18 +423,21 @@ typedef struct _Context Context;
 struct _Context
 {
     struct nemocanvas *canvas;
-    struct talenode *set_node;
-    struct talenode *text_node;
 
     int width, height;
-
-    TextArea *ta;
-    double pos_y;
     double event_prev_y;
 
+    struct talenode *text_node;
+    TextArea *ta;
+
+    struct talenode *set_node;
     cairo_matrix_t matrix;
     struct pathone *group;
     struct pathone *btn_one, *font_family_one, *font_size_one, *font_color_one;
+
+    List *font_list;
+    struct talenode *node_ff, *node_fs, *node_fc;
+    TextArea *ta_ff, *ta_fs, *ta_fc;
     double btn_radius;
 
     int timer_cnt;
@@ -441,6 +481,7 @@ _path_create(double w, double h)
     return path;
 }
 
+#if 0
 static void
 _font_menu_animator(struct nemotimer *timer, void *data)
 {
@@ -466,11 +507,12 @@ _font_menu_animator(struct nemotimer *timer, void *data)
 	nemotale_composite(tale, NULL);
     nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
-    if (ctx->timer_cnt < 60)  {
+    if (ctx->timer_cnt < 20)  {
         nemotimer_set_timeout(timer, 1000.0/60);
     } else
         ctx->timer_cnt = 0;
 }
+#endif
 
 static void
 _transform_event(struct taletransition *trans, void *context, void *data)
@@ -480,23 +522,29 @@ _transform_event(struct taletransition *trans, void *context, void *data)
 	nemotale_path_transform_dirty(one);
 }
 
-int cnt = 0;
-void _ani_event(struct taletransition *trans, void *context, void *data)
+void _btn_create_event(struct taletransition *trans, void *context, void *data)
 {
-    ERR("%d", ++cnt);
     Context *ctx = context;
     struct nemocanvas *canvas = ctx->canvas;
     //struct nemotool *tool = nemocanvas_get_tool(canvas);
     struct nemotale *tale  = nemocanvas_get_userdata(canvas);
 
     ctx->timer_cnt++;
+    if (ctx->timer_cnt > 50) return;
     nemotale_handle_canvas_update_event(NULL, canvas, tale);
 
-    double scale = 0.1 + ctx->timer_diff_s * ctx->timer_cnt;
-
-    nemotale_path_scale(ctx->font_family_one, scale, scale);
-    nemotale_path_scale(ctx->font_size_one, scale, scale);
-    nemotale_path_scale(ctx->font_color_one, scale, scale);
+    if (ctx->timer_cnt <= 20) {
+        double scale = 0.1 + (0.9/20) * ctx->timer_cnt;
+        nemotale_path_scale(ctx->font_family_one, scale, scale);
+    }
+    if ((ctx->timer_cnt > 10) && (ctx->timer_cnt <= 30)) {
+        double scale = 0.1 + (0.9/20) * (ctx->timer_cnt - 10);
+        nemotale_path_scale(ctx->font_size_one, scale, scale);
+    }
+    if ((ctx->timer_cnt > 20) && (ctx->timer_cnt <= 40)) {
+        double scale = 0.1 + (0.9/20) * (ctx->timer_cnt - 20);
+        nemotale_path_scale(ctx->font_color_one, scale, scale);
+    }
 
     nemotale_node_clear_path(ctx->set_node);
 	nemotale_node_damage_all(ctx->set_node);
@@ -506,13 +554,167 @@ void _ani_event(struct taletransition *trans, void *context, void *data)
 	nemotale_composite(tale, NULL);
     nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
-    if (ctx->timer_cnt > 20) {
-        ctx->timer_cnt = 20;
+    if ((ctx->timer_cnt == 20) || (ctx->timer_cnt == 40) ||
+        (ctx->timer_cnt == 60)) {
+        ctx->timer_diff_s = 0.9/20;
     }
 }
 
 static void
-_font_menu_animation(Context *ctx)
+_view_update(Context *ctx, int width, int height)
+{
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotale *tale = nemocanvas_get_userdata(canvas);
+    cairo_matrix_t matrix;
+    matrix.xx = 1;
+    matrix.yx = 0;
+    matrix.xy = 0;
+    matrix.yy = 1;
+    matrix.x0 = 0;
+    matrix.y0 = 0;
+
+    if ((width > 0) && (height > 0))
+        nemocanvas_set_size(canvas, width, height);
+
+    nemotale_handle_canvas_update_event(NULL, canvas, tale);
+
+    // if size is changed
+    if ((width > 0) && (height > 0)) {
+        // Text layer
+        nemotale_node_resize_pixman(ctx->text_node, width, height);
+
+        double scale = width/640.;
+        // Btn layer
+        nemotale_node_resize_pixman(ctx->set_node, width, height);
+        if (ctx->node_ff) {
+            nemotale_node_resize_pixman(ctx->node_ff, scale*300., scale*90);
+            nemotale_node_translate(ctx->node_ff, width/2.- scale*140, height/2. - scale*90);
+            _textarea_resize(ctx->ta_ff, 300 * scale, 90 * scale);
+        }
+        if (ctx->node_fs) {
+            nemotale_node_resize_pixman(ctx->node_fs, scale*140., scale*90);
+            nemotale_node_translate(ctx->node_fs, width/2.- scale*140, height/2. + scale*40);
+            _textarea_resize(ctx->ta_fs, 140 * scale, 90 * scale);
+        }
+        if (ctx->node_fc) {
+            nemotale_node_resize_pixman(ctx->node_fc, scale*140., scale*90);
+            nemotale_node_translate(ctx->node_fc, width/2.+ scale*20, height/2. + scale*40);
+            _textarea_resize(ctx->ta_fc, 140 * scale, 90 * scale);
+        }
+        cairo_matrix_init_scale(&matrix,
+                (double)width / ctx->width,
+                (double)height / ctx->height);
+    }
+
+    // Text layer
+    _textarea_attach(ctx->ta, nemotale_node_get_cairo(ctx->text_node));
+    _textarea_render(ctx->ta);
+
+    // Btn layer
+    nemotale_node_clear_path(ctx->set_node);
+    nemotale_node_damage_all(ctx->set_node);
+    nemotale_path_set_parent_transform(ctx->group, &matrix);
+    nemotale_path_update_one(ctx->group);
+    nemotale_node_render_path(ctx->set_node, ctx->group);
+    if (!ctx->btn_one) {
+        double w = nemotale_get_width(tale);
+        double h = nemotale_get_height(tale);
+        int i = 0;
+        struct talenode *node;
+        TextArea *ta;
+        Text **texts;
+
+        if (!ctx->node_ff) {
+            // font family
+            node = nemotale_node_create_pixman(300, 90);
+            nemotale_node_set_id(node, 10);
+            nemotale_attach_node(tale, node);
+            nemotale_node_translate(node, w/2 - 140, h/2 - 90);
+
+            int num;
+            List *fl;
+            fl = _font_list_get(&num);
+            ctx->font_list = fl;
+
+            texts = malloc(sizeof(Text*) * 10);
+            for (i = 0; i < 10 ; i++) {
+                MyFont *font = list_idx_get_data(fl, i);
+                char *str = _strdup_printf("%s:%s",
+                        _font_family_get(font),
+                        _font_style_get(font));
+                texts[i] = _text_create(str);
+            }
+            ta = _textarea_create(texts, 10);
+            _textarea_resize(ta, 300, 90);
+            _textarea_font_size_set(ta, 30);
+            _textarea_font_color_set(ta, mcolors[21]);
+            ctx->node_ff = node;
+            ctx->ta_ff = ta;
+        }
+
+        // font size
+        if (!ctx->node_fs) {
+            node = nemotale_node_create_pixman(140, 90);
+            nemotale_node_set_id(node, 11);
+            nemotale_attach_node(tale, node);
+            nemotale_node_translate(node, w/2 - 140, h/2 + 40);
+
+            texts = malloc(sizeof(Text*) * 10);
+            for (i = 0; i < 12 ; i++) {
+                char buf[3];
+                if ((i == 0) || (i >= 11)) snprintf(buf, 3, " ");
+                else
+                    snprintf(buf, 3, "%2d", (10 + (i-1)*5));
+                texts[i] = _text_create(buf);
+            }
+            ta = _textarea_create(texts, 12);
+            _textarea_resize(ta, 140, 90);
+            _textarea_font_size_set(ta, 30);
+            _textarea_font_color_set(ta, mcolors[21]);
+            ctx->node_fs = node;
+            ctx->ta_fs = ta;
+        }
+
+        // font color
+        if (!ctx->node_fc) {
+            node = nemotale_node_create_pixman(140, 90);
+            nemotale_node_set_id(node, 12);
+            nemotale_attach_node(tale, node);
+            nemotale_node_translate(node, w/2 + 20, h/2 + 40);
+
+            texts = malloc(sizeof(Text*) * 10);
+            for (i = 0; i < 10 ; i++) {
+                texts[i] = _text_create("Color 1");
+
+            }
+            ta = _textarea_create(texts, 10);
+            _textarea_resize(ta, 140, 90);
+            _textarea_font_size_set(ta, 30);
+            _textarea_font_color_set(ta, mcolors[21]);
+            ctx->node_fc = node;
+            ctx->ta_fc = ta;
+        }
+        _textarea_attach(ctx->ta_ff, nemotale_node_get_cairo(ctx->node_ff));
+        _textarea_render(ctx->ta_ff);
+        _textarea_attach(ctx->ta_fs, nemotale_node_get_cairo(ctx->node_fs));
+        _textarea_render(ctx->ta_fs);
+        _textarea_attach(ctx->ta_fc, nemotale_node_get_cairo(ctx->node_fc));
+        _textarea_render(ctx->ta_fc);
+    }
+
+	nemotale_composite(tale, NULL);
+    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+}
+
+static void
+_font_menu_anim_end(struct taletransition *trans, void *context, void *data)
+{
+    Context *ctx = context;
+    _view_update(ctx, 0, 0);
+}
+
+static void
+_font_menu_anim_begin(Context *ctx)
 {
     struct nemocanvas *canvas = ctx->canvas;
     struct nemotool *tool = nemocanvas_get_tool(canvas);
@@ -520,7 +722,7 @@ _font_menu_animation(Context *ctx)
     struct taletransition *trans;
 
 #if 1
-    trans = nemotale_transition_create(0, 400);
+    trans = nemotale_transition_create(0, 1000);
     nemotale_transition_attach_timing(trans, 0.3f, NEMOEASE_CUBIC_OUT_TYPE);
     nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
     nemotale_transition_attach_event(trans,
@@ -537,7 +739,7 @@ _font_menu_animation(Context *ctx)
             _transform_event, NULL, ctx->font_family_one);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            _ani_event, ctx, NULL);
+            _btn_create_event, ctx, NULL);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event, NULL, ctx->group);
@@ -550,19 +752,17 @@ _font_menu_animation(Context *ctx)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_canvas_flush_event, canvas, tale);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_END,
+            _font_menu_anim_end, ctx, tale);
 
     nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->group));
     nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->font_family_one));
 
-    /*
-    nemotale_transition_attach_dattr(trans, NTPATH_ATWIDTH(ctx->font_family_one),
-            1.0f, 1000);
-    */
     nemotale_dispatch_transition_timer_event(tool, trans);
-    ctx->timer_diff_s = 0.9/20.0;
 #else
 
-    ctx->timer_diff_s = 0.9/60.0;
+    ctx->timer_diff_s = 0.9/20.0;
 
     struct nemotimer *timer = nemotimer_create(tool);
     nemotimer_set_timeout(timer, 1000.0/60);
@@ -573,7 +773,7 @@ _font_menu_animation(Context *ctx)
 }
 
 static void
-nemotemp_handle_canvas_end_event(struct taletransition *trans, void *_context, void *_data)
+_btn_anim_end(struct taletransition *trans, void *_context, void *_data)
 {
     Context *ctx = _context;
     struct nemocanvas *canvas = ctx->canvas;
@@ -637,6 +837,7 @@ nemotemp_handle_canvas_end_event(struct taletransition *trans, void *_context, v
     ctx->font_color_one = one;
 
     nemotale_path_destroy_one(ctx->btn_one);
+    ctx->btn_one = NULL;
     nemotale_node_clear_path(ctx->set_node);
 	nemotale_node_damage_all(ctx->set_node);
     nemotale_path_update_one(ctx->group);
@@ -645,11 +846,11 @@ nemotemp_handle_canvas_end_event(struct taletransition *trans, void *_context, v
 	nemotale_composite(tale, NULL);
     nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
-    _font_menu_animation(ctx);
+    _font_menu_anim_begin(ctx);
 }
 
 static void
-_animation(Context *ctx)
+_btn_anim_begin(Context *ctx)
 {
     struct nemocanvas *canvas = ctx->canvas;
     struct nemotool *tool = nemocanvas_get_tool(canvas);
@@ -689,7 +890,7 @@ _animation(Context *ctx)
             nemotale_handle_canvas_flush_event, canvas, tale);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_END,
-            nemotemp_handle_canvas_end_event, ctx, NULL);
+            _btn_anim_end, ctx, NULL);
 
     nemotale_transition_attach_signal(trans, NTPATH_DESTROY_SIGNAL(ctx->group));
 
@@ -709,14 +910,98 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
     int ntaps;
     ntaps = nemotale_get_taps(tale, taps, type);
     //ERR("type[%d], ntaps: %d, device[%ld] serial[%d] time[%d] value[%d] x[%lf] y[%lf] dx[%lf] dy[%lf]", type, ntaps, event->device, event->serial, event->time, event->value, event->x, event->y, event->dx, event->dy);
-    if (type & NEMOTALE_DOWN_EVENT) {
-        ctx->event_prev_y = 0;
+
+    if ((type & NEMOTALE_DOWN_EVENT) ||
+        (type & NEMOTALE_UP_EVENT)) {
+        ctx->event_prev_y = -9999;  // reset
+    }
+
+    if ((type & NEMOTALE_UP_EVENT) && (ntaps == 1) &&
+        !nemotale_is_single_click(tale, event, type)) {
+        struct taletap *tap = nemotale_get_tap(tale, event->device, type);
+        struct pathone *one = tap->item;
+        int y;
+        if (one && !strcmp(NTPATH_ID(one), "font_family")) {
+            _textarea_content_pos_get(ctx->ta_ff, NULL, &y);
+            MyFont *font;
+            int yy = y/-30;
+            font = list_idx_get_data(ctx->font_list, yy);
+            nemotale_handle_canvas_update_event(NULL, canvas, tale);
+            nemotale_node_damage_all(ctx->set_node);
+            nemotale_path_update_one(ctx->group);
+            nemotale_node_render_path(ctx->set_node, ctx->group);
+
+            const char *_family = _textarea_font_family_get(ctx->ta);
+            const char *_style = _textarea_font_style_get(ctx->ta);
+            const char *family = _font_family_get(font);
+            const char *style = _font_style_get(font);
+            if (strcmp(_family, family) ||
+                strcmp(_style, style)) {
+                _textarea_font_family_set(ctx->ta, family);
+                _textarea_font_style_set(ctx->ta, style);
+                _textarea_attach(ctx->ta,
+                        nemotale_node_get_cairo(ctx->text_node));
+                _textarea_render(ctx->ta);
+
+                nemotale_composite(tale, NULL);
+                nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+            }
+
+        } else if (one && !strcmp(NTPATH_ID(one),
+                    "font_size")) {
+            _textarea_content_pos_get(ctx->ta_fs, NULL, &y);
+            int fsize = _textarea_font_size_get(ctx->ta_fs);
+            int nsize = 10;
+            if (y > -30) {
+                nsize = 10;
+            } else if ((y <= -30) && (y > -60)) {
+                nsize = 15;
+            } else if ((y <= -60) && (y > -90)) {
+                nsize = 20;
+            } else if ((y <= -90) && (y > -120)) {
+                nsize = 25;
+            } else if ((y <= -120) && (y > -150)) {
+                nsize = 30;
+            } else if ((y <= -150) && (y > -180)) {
+                nsize = 35;
+            } else if ((y <= -180) && (y > -210)) {
+                nsize = 40;
+            } else if ((y <= -210) && (y > -240)) {
+                nsize = 45;
+            } else if ((y <= -240) && (y > -270)) {
+                nsize = 50;
+            } else {
+                nsize = 55;
+            }
+            if (fsize != nsize) {
+                nemotale_handle_canvas_update_event(NULL, canvas, tale);
+                nemotale_node_damage_all(ctx->set_node);
+                nemotale_path_update_one(ctx->group);
+                nemotale_node_render_path(ctx->set_node, ctx->group);
+
+                _textarea_font_size_set(ctx->ta, nsize);
+
+                _textarea_attach(ctx->ta, nemotale_node_get_cairo(ctx->text_node));
+                _textarea_render(ctx->ta);
+                nemotale_composite(tale, NULL);
+                nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+            }
+        } else if (one && !strcmp(NTPATH_ID(one),
+                    "font_color")) {
+        }
+    } else if (type & NEMOTALE_DOWN_EVENT) {
         struct taletap *tap = nemotale_get_tap(tale, event->device, type);
         tap->item = nemotale_path_pick_one(ctx->group, event->x, event->y);
-
         if (ntaps == 1) {
-            nemocanvas_move(canvas, taps[0]->serial);
+            struct pathone *one = tap->item;
+            if (!one ||
+                (strcmp(NTPATH_ID(one), "font_family") &&
+                 strcmp(NTPATH_ID(one), "font_size") &&
+                 strcmp(NTPATH_ID(one), "font_color"))) {
+                nemocanvas_move(canvas, taps[0]->serial);
+            }
         } else if (ntaps == 2) {
+            // enable resize & rotate
             // 1: resize, 2:rotate
             nemocanvas_pick(canvas,
                     taps[0]->serial,
@@ -724,6 +1009,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                     (1 << NEMO_SURFACE_PICK_TYPE_ROTATE) |
                     (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
         } else if (ntaps == 3) {
+            // disable resize & rotate
             nemocanvas_pick(canvas,
                     taps[0]->serial,
                     taps[1]->serial,
@@ -733,42 +1019,77 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
         if (ntaps == 1) {
             struct taletap *tap = nemotale_get_tap(tale, event->device, type);
             struct pathone *one = tap->item;
-            if (one && !strcmp(NTPATH_ID(one), "btn")) {
-                _animation(ctx);
+            if (one && !strcmp(NTPATH_ID(one), "start")) {
+                _btn_anim_begin(ctx);
             }
-
         } else if (ntaps == 3) {
             struct nemotool *tool = nemocanvas_get_tool(canvas);
             nemotool_exit(tool);
         }
-    } else if (ntaps == 3) {
-        if (ctx->event_prev_y == 0) {
-            ctx->event_prev_y = event->y;
+    } else {
+        // scrolling
+        if (ctx->event_prev_y == -9999) {
+            ctx->event_prev_y = event->y; // reset
             return;
         }
-        double th;
-         _textarea_content_size_get(ctx->ta, NULL, &th);
-        ctx->pos_y += (event->y - ctx->event_prev_y);
-        if (ctx->pos_y >= 0)
-            ctx->pos_y = 0;
-        else if (th <= ctx->height)
-            ctx->pos_y = 0;
-        else if (ctx->pos_y <= -(th - ctx->height))
-            ctx->pos_y = -(th - ctx->height);
-
+        double pos_y = (event->y - ctx->event_prev_y);
         ctx->event_prev_y = event->y;
+        if (ntaps == 1) {
+            struct taletap *tap = nemotale_get_tap(tale, event->device, type);
+            struct pathone *one = tap->item;
+            if (one && !strcmp(NTPATH_ID(one), "font_family")) {
+                nemotale_handle_canvas_update_event(NULL, canvas, tale);
+                nemotale_node_damage_all(ctx->set_node);
+                nemotale_path_update_one(ctx->group);
+                nemotale_node_render_path(ctx->set_node, ctx->group);
 
-        ERR("%lf %lf", ctx->pos_y, th);
-        nemotale_handle_canvas_update_event(NULL, canvas, tale);
-        nemotale_node_damage_all(ctx->set_node);
-        nemotale_path_update_one(ctx->group);
-        nemotale_node_render_path(ctx->set_node, ctx->group);
-        //_textarea_attach(ta, nemotale_node_get_cairo(ctx->text_node));
-        _textarea_render(ctx->ta);
-        nemotale_composite(tale, NULL);
-        nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
-    } else if (type & NEMOTALE_UP_EVENT) {
-        ctx->event_prev_y = 0;
+                _textarea_attach(ctx->ta_ff, nemotale_node_get_cairo(ctx->node_ff));
+                _textarea_scroll(ctx->ta_ff, 0, pos_y);
+                _textarea_render(ctx->ta_ff);
+
+                nemotale_composite(tale, NULL);
+                nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+            } else if (one && !strcmp(NTPATH_ID(one),
+                        "font_size")) {
+                nemotale_handle_canvas_update_event(NULL, canvas, tale);
+                nemotale_node_damage_all(ctx->set_node);
+                nemotale_path_update_one(ctx->group);
+                nemotale_node_render_path(ctx->set_node, ctx->group);
+
+                _textarea_scroll(ctx->ta_fs, 0, pos_y);
+                _textarea_attach(ctx->ta_fs, nemotale_node_get_cairo(ctx->node_fs));
+                _textarea_render(ctx->ta_fs);
+
+                nemotale_composite(tale, NULL);
+                nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+            } else if (one && !strcmp(NTPATH_ID(one),
+                        "font_color")) {
+                nemotale_handle_canvas_update_event(NULL, canvas, tale);
+                nemotale_node_damage_all(ctx->set_node);
+                nemotale_path_update_one(ctx->group);
+                nemotale_node_render_path(ctx->set_node, ctx->group);
+
+                _textarea_scroll(ctx->ta_fc, 0, pos_y);
+                _textarea_attach(ctx->ta_fc, nemotale_node_get_cairo(ctx->node_fc));
+                _textarea_render(ctx->ta_fc);
+
+                nemotale_composite(tale, NULL);
+                nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+            }
+        } else if (ntaps == 3) {
+            nemotale_handle_canvas_update_event(NULL, canvas, tale);
+
+            nemotale_node_damage_all(ctx->set_node);
+            nemotale_path_update_one(ctx->group);
+            nemotale_node_render_path(ctx->set_node, ctx->group);
+
+            _textarea_scroll(ctx->ta, 0, pos_y);
+            _textarea_attach(ctx->ta, nemotale_node_get_cairo(ctx->text_node));
+            _textarea_render(ctx->ta);
+
+            nemotale_composite(tale, NULL);
+            nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+        }
     }
 }
 
@@ -778,28 +1099,7 @@ _canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
     struct nemotale *tale  = nemocanvas_get_userdata(canvas);
     Context *ctx = nemotale_get_userdata(tale);
 
-    nemocanvas_set_size(canvas, width, height);
-    nemotale_handle_canvas_update_event(NULL, canvas, tale);
-
-    cairo_matrix_t matrix;
-    // set btn
-    nemotale_node_resize_pixman(ctx->set_node, width, height);
-	cairo_matrix_init_scale(&matrix,
-            (double)width / ctx->width, (double)height / ctx->height);
-
-    nemotale_node_clear_path(ctx->set_node);
-	nemotale_node_damage_all(ctx->set_node);
-    nemotale_path_set_parent_transform(ctx->group, &matrix);
-	nemotale_path_update_one(ctx->group);
-	nemotale_node_render_path(ctx->set_node, ctx->group);
-
-    // Text layer
-    nemotale_node_resize_pixman(ctx->text_node, width, height);
-    _textarea_attach(ctx->ta, nemotale_node_get_cairo(ctx->text_node));
-    _textarea_render(ctx->ta);
-
-	nemotale_composite(tale, NULL);
-    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
+    _view_update(ctx, width, height);
 }
 
 int main(int argc, char *argv[])
@@ -864,6 +1164,7 @@ int main(int argc, char *argv[])
         _font_shutdown();
         return -1;
     }
+    _textarea_resize(ta, ctx->width, ctx->height);
     _textarea_font_size_set(ta, 15);
     _textarea_font_family_set(ta, "LiberationMono");
     _textarea_bg_color_set(ta, mcolors[1]);
@@ -890,7 +1191,7 @@ int main(int argc, char *argv[])
     ctx->btn_radius = btn_radius;
 
     one = nemotale_path_create_circle(btn_radius);
-    nemotale_path_set_id(one, "btn");
+    nemotale_path_set_id(one, "start");
     nemotale_path_attach_style(one, NULL);
     nemotale_path_translate(one, setbtn_x, setbtn_y);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),

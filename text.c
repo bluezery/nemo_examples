@@ -574,6 +574,42 @@ _font_create(const char *filepath, unsigned int idx, const char *font_family, co
     return font;
 }
 
+List *
+_font_list_get(int *num)
+{
+    FcPattern *pat;
+    FcObjectSet *os;
+    FcFontSet *fs;
+    pat = FcPatternCreate();
+    os = FcObjectSetBuild(FC_FAMILY, FC_STYLE, FC_SLANT,
+            FC_WEIGHT, FC_WIDTH, FC_SPACING, NULL);
+    fs = FcFontList(0, pat, os);
+    FcObjectSetDestroy(os);
+    FcPatternDestroy(pat);
+
+    List *fl = NULL;
+    if (fs) {
+        int i = 0;
+        for (i = 0 ; i < fs->nfont ; i++) {
+            MyFont *font;
+            FcChar8 *_family = NULL, *_style = NULL;
+            int _slant, _weight, _spacing, _width;
+            FcPatternGetString(fs->fonts[i], FC_FAMILY, 0, &_family);
+            FcPatternGetString(fs->fonts[i], FC_STYLE, 0, &_style);
+            FcPatternGetInteger(fs->fonts[i], FC_SLANT, 0, &_slant);
+            FcPatternGetInteger(fs->fonts[i], FC_WEIGHT, 0, &_weight);
+            FcPatternGetInteger(fs->fonts[i], FC_WIDTH, 0, &_width);
+            FcPatternGetInteger(fs->fonts[i], FC_SPACING, 0, &_spacing);
+            font = _font_load(_family, _style, _slant, _weight,
+                    _width, _spacing);
+            fl = list_data_insert(fl, font);
+        }
+        FcFontSetDestroy(fs);
+    }
+    if (num) *num = fs->nfont;
+    return fl;
+}
+
 // font_family: e.g. NULL, "LiberationMono", "Times New Roman", "Arial", etc.
 // font_style: e.g. NULL, "Regular"(Normal), "Bold", "Italic", "Bold Italic", etc.
 // font_slant: e.g. FC_SLANT_ROMAN, FC_SLANT_ITALIC, etc.
@@ -680,6 +716,20 @@ _font_load(const char *font_family, const char *font_style, int font_slant, int 
     FcFontSetDestroy(set);
 
     return font;
+}
+
+const char *
+_font_family_get(MyFont *font)
+{
+    RET_IF(!font);
+    return font->font_family;
+}
+
+const char *
+_font_style_get(MyFont *font)
+{
+    RET_IF(!font);
+    return font->font_style;
 }
 
 static void
@@ -987,6 +1037,7 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     cairo_save(cr);
 
+    double dx = 1, dy = 1;
     cairo_set_scaled_font(cr, t->font->cairo_font);
     cairo_set_font_size(cr,
             t->font_size * t->font->ft_face->units_per_EM /
