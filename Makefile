@@ -10,8 +10,8 @@ ASST=mischelper glhelper fbohelper
 ## ecore ecore-evas evas
 LIB=util.o talehelper.o cairo_view.o wl_window.o view.o text.o #$(ASST)
 
-all: nemotest textviewer
-	##pkgmanager wayland
+all: nemoeffect 
+	#nemotest textviewer
 
 #asst:
 #	for i in $(ASST) \
@@ -22,6 +22,10 @@ nemotest_egl: nemotest_egl.c $(LIB)
 	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
 
 nemotest: nemotest.c $(LIB)
+	$(CC) -g -c $@.c $(CFLAGS)
+	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
+
+nemoeffect: nemoeffect.c $(LIB)
 	$(CC) -g -c $@.c $(CFLAGS)
 	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
 
@@ -43,5 +47,5 @@ wayland: wayland.c $(LIB)
 	$(CC) -g -c $*.c $(CFLAGS)
 
 clean:
-	rm -rf textviewer map pkgmanager wayland freetype-svg
+	rm -rf nemotest nemoeffect textviewer #map pkgmanager wayland freetype-svg
 	rm -rf $(LIB)
