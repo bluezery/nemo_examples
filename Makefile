@@ -10,8 +10,8 @@ ASST=mischelper glhelper fbohelper
 ## ecore ecore-evas evas
 LIB=util.o talehelper.o cairo_view.o wl_window.o view.o text.o #$(ASST)
 
-TEST=nemoeffect #future
-	#nemotest
+TEST=future
+	#nemoeffect nemotest
 
 all: $(LIB) test
 	#textviewer

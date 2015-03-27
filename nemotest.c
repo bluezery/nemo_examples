@@ -5,11 +5,12 @@
 #include <nemoegl.h>
 
 #include <nemotale.h>
+#include <nemocanvas.h>
 #include <talegl.h>
-#include <talenode.h>
 #include <talemisc.h>
 #include <taleevent.h>
 #include <talegesture.h>
+#include <talenode.h>
 
 #include <pathshape.h>
 #include <pathstyle.h>
@@ -203,6 +204,14 @@ int main()
     ctx->matrix = matrix;
 
     nemotool_run(tool);
+
+    nemotale_path_destroy_one(one);
+    nemotale_path_destroy_one(group);
+    nemotale_node_destroy(node);
+
+    nemotale_destroy(tale);
+    nemocanvas_destroy(canvas);
+
     nemotool_disconnect_wayland(tool);
     nemotool_destroy(tool);
 

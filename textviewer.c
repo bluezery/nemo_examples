@@ -702,7 +702,7 @@ _view_update(Context *ctx, int width, int height)
         _textarea_render(ctx->ta_fc);
     }
 
-	nemotale_composite(tale, NULL);
+    nemotale_composite(tale, NULL);
     nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 }
 
@@ -901,8 +901,42 @@ _btn_anim_begin(Context *ctx)
     nemotale_dispatch_transition_timer_event(tool, trans);
 }
 
+static cnt = 0;
+
 static void
-_tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
+_main_exit_anim(struct nemotimer *timer, void *data)
+{
+    Context *ctx = data;
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    struct nemotale *tale = nemocanvas_get_userdata(canvas);
+
+    _view_update(ctx, 200./cnt, 200./cnt);
+
+    printf("%d\n", cnt);
+    cnt++;
+    if (cnt >= 200) {
+        nemotool_exit(tool);
+    } else
+        nemotimer_set_timeout(timer, 1000./60.);
+
+}
+
+static void
+_main_exit(Context *ctx)
+{
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    //nemotool_exit(tool);
+
+    struct nemotimer *timer = nemotimer_create(tool);
+    nemotimer_set_timeout(timer, 1000./60.);
+    nemotimer_set_userdata(timer, ctx);
+    nemotimer_set_callback(timer, _main_exit_anim);
+}
+
+static void
+_canvas_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
 {
     Context *ctx = nemotale_get_userdata(tale);
     struct nemocanvas *canvas = ctx->canvas;
@@ -1022,9 +1056,6 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
             if (one && !strcmp(NTPATH_ID(one), "start")) {
                 _btn_anim_begin(ctx);
             }
-        } else if (ntaps == 3) {
-            struct nemotool *tool = nemocanvas_get_tool(canvas);
-            nemotool_exit(tool);
         }
     } else {
         // scrolling
@@ -1099,6 +1130,11 @@ _canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
     struct nemotale *tale  = nemocanvas_get_userdata(canvas);
     Context *ctx = nemotale_get_userdata(tale);
 
+    if ((width <= 200) || (height <= 200)) {
+         _main_exit(ctx);
+         return;
+    }
+
     _view_update(ctx, width, height);
 }
 
@@ -1139,7 +1175,7 @@ int main(int argc, char *argv[])
 
     struct nemotale *tale;
     tale = nemotale_create_pixman();
-    nemotale_attach_canvas(tale, canvas, _tale_event);
+    nemotale_attach_canvas(tale, canvas, _canvas_event);
     nemotale_set_userdata(tale, ctx);
 
 	nemocanvas_flip(canvas);
@@ -1167,7 +1203,7 @@ int main(int argc, char *argv[])
     _textarea_resize(ta, ctx->width, ctx->height);
     _textarea_font_size_set(ta, 15);
     _textarea_font_family_set(ta, "LiberationMono");
-    _textarea_bg_color_set(ta, mcolors[1]);
+    _textarea_bg_color_set(ta, mcolors[19]);
     _textarea_font_color_set(ta, mcolors[21]);
 
     _textarea_attach(ta, nemotale_node_get_cairo(ctx->text_node));

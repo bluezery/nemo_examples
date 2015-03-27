@@ -70,134 +70,22 @@ _fade_begin(struct Context *ctx)
     struct taletransition *trans;
 
     LOG("fade start");
-    trans = nemotale_transition_create(0, 1000);
-    nemotale_transition_attach_timing(trans, 1.0,
-            NEMOEASE_CUBIC_OUT_TYPE);
-    /*
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_update_event,
-            NULL, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_render_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_composite_event, tale, NULL);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_canvas_flush_event, canvas, tale);
-            */
-    nemotale_dispatch_transition_timer_event(tool, trans);
 
-#if 0
-    trans = nemotale_transition_create(0, 1000);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one1);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one1_txt);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one1_txt2);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one2);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one2_txt);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one2_txt2);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one3);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one3_txt);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one3_txt2);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_update_event,
-            NULL, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_render_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_composite_event, tale, NULL);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_canvas_flush_event, canvas, tale);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_END,
-            _fade_end, ctx, NULL);
-
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one1));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one1_txt));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one1_txt2));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one2));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one2_txt));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one2_txt2));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one3));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one3_txt));
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(ctx->one3_txt2));
+    trans = _transit_create(canvas, 500, 3000, NEMOEASE_CUBIC_OUT_TYPE);
+    _transit_damage_path(trans, ctx->node, ctx->group);
+    //_transit_transform_path(trans, ctx->group);
 
     // 1
     nemotale_transition_attach_dattrs(trans,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1)),
-            4, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+            4, 0.1f, 0.0f, 1.0f, 0.0f, 0.0f);
+    _transit_go(trans, canvas);
     nemotale_transition_attach_dattrs(trans,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1)),
-            4, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+            4, 0.3f, 0.0f, 1.0f, 0.0f, 0.0f);
     nemotale_transition_attach_dattrs(trans,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1)),
-            4, 1.0f, 0.0f, 1.0f, 0.0f, 0.5f);
+            4, 0.4f, 0.0f, 1.0f, 0.0f, 0.5f);
     nemotale_transition_attach_dattrs(trans,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1_txt)),
             4, 0.1f, 0.0f, 0.0f, 0.0f, 0.0f);
@@ -272,8 +160,6 @@ _fade_begin(struct Context *ctx)
     nemotale_transition_attach_dattrs(trans,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one3_txt2)),
             4, 1.0f, 0.0f, 0.0f, 1.0f, 0.5f);
-    nemotale_dispatch_transition_timer_event(tool, trans);
-#endif
 }
 
 static void
@@ -317,7 +203,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
 
 int main()
 {
-    int w = 300, h = 300;
+    int w = 320, h = 190;
     struct Context *ctx = malloc(sizeof(struct Context));
     ctx->w = w;
     ctx->h = h;
