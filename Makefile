@@ -10,24 +10,18 @@ ASST=mischelper glhelper fbohelper
 ## ecore ecore-evas evas
 LIB=util.o talehelper.o cairo_view.o wl_window.o view.o text.o #$(ASST)
 
-all: nemoeffect 
-	#nemotest textviewer
+TEST=nemoeffect #future
+	#nemotest
 
-#asst:
-#	for i in $(ASST) \
-#		$(CC) -g -c asst/$i.c $(CFLAGS)
+all: $(LIB) test
+	#textviewer
 
-nemotest_egl: nemotest_egl.c $(LIB)
-	$(CC) -g -c $@.c $(CFLAGS)
-	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
-
-nemotest: nemotest.c $(LIB)
-	$(CC) -g -c $@.c $(CFLAGS)
-	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
-
-nemoeffect: nemoeffect.c $(LIB)
-	$(CC) -g -c $@.c $(CFLAGS)
-	$(CC) -g -o $@ $@.o $(LIB) $(LDFLAGS)
+test: 
+	@for i in $(TEST); do \
+		$(CC) -g -c $$i.c $(CFLAGS) && \
+		$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS) && \
+		echo "Compiled $$i"; \
+	done;
 
 textviewer: textviewer.c  $(LIB)
 	$(CC) -g -c $@.c $(CFLAGS)
@@ -47,5 +41,5 @@ wayland: wayland.c $(LIB)
 	$(CC) -g -c $*.c $(CFLAGS)
 
 clean:
-	rm -rf nemotest nemoeffect textviewer #map pkgmanager wayland freetype-svg
+	rm -rf $(TEST) textviewer #map pkgmanager wayland freetype-svg
 	rm -rf $(LIB)
