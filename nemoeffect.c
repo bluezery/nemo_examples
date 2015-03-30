@@ -24,6 +24,7 @@ struct Context {
     struct pathone *group;
     struct pathone *one_bg;
     double one_stroke_w;
+    struct pathone *one_group;
     struct pathone *one_circle, *one_rect, *one_path, *one_text;
     struct pathone *one_clip;
     int w, h;
@@ -35,6 +36,22 @@ struct Context {
 };
 
 static void
+_nemotale_handle_canvas_update_event(struct taletransition *trans, void *context, void *data)
+{
+	struct nemocanvas *canvas = (struct nemocanvas *)context;
+	struct nemotale *tale = (struct nemotale *)data;
+
+	nemocanvas_flip(canvas);
+	nemocanvas_clear(canvas);
+	nemotale_detach_pixman(tale);
+	nemotale_attach_pixman(tale,
+			nemocanvas_get_data(canvas),
+			nemocanvas_get_width(canvas),
+			nemocanvas_get_height(canvas),
+			nemocanvas_get_stride(canvas));
+}
+
+static void
 _canvas_resize(struct nemocanvas *canvas, int32_t w, int32_t h)
 {
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
@@ -42,7 +59,7 @@ _canvas_resize(struct nemocanvas *canvas, int32_t w, int32_t h)
     struct talenode *node = ctx->node;
 
     nemocanvas_set_size(canvas, w, h);
-    nemotale_handle_canvas_update_event(NULL, canvas, tale);
+    _nemotale_handle_canvas_update_event(NULL, canvas, tale);
 
     nemotale_node_resize_pixman(node, w, h);
 
@@ -83,13 +100,13 @@ _fade_begin(struct Context *ctx)
     struct taletransition *trans;
 
     if ((ctx->fade_state == 1) || (ctx->fade_state == -1)) {
-        ERR("fading is already stared");
+        ERR("fading is ongoing");
         return;
     }
     trans = nemotale_transition_create(0, 1500);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
+            _nemotale_handle_canvas_update_event, canvas, tale);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_node_handle_path_damage_event,
@@ -97,15 +114,16 @@ _fade_begin(struct Context *ctx)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
+            ctx->node, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event,
-            NULL, ctx->group);
+            NULL, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_render_event,
+            nemotale_node_handle_path_clip_and_render_event,
             ctx->node, ctx->group);
+
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_composite_event, tale, NULL);
@@ -206,13 +224,13 @@ _zoom_begin(struct Context *ctx)
     struct taletransition *trans;
 
     if ((ctx->zoom_state == 1) || (ctx->zoom_state == -1)) {
-        ERR("zooming is already stared");
+        ERR("zooming is ongoing");
         return;
     }
     trans = nemotale_transition_create(0, 1000);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
+            _nemotale_handle_canvas_update_event, canvas, tale);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_node_handle_path_damage_event,
@@ -220,31 +238,20 @@ _zoom_begin(struct Context *ctx)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
+            ctx->node, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_transform_event,
-            NULL, ctx->one_circle);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_path);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_rect);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_text);
+            NULL, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event,
-            NULL, ctx->group);
+            NULL, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_render_event,
+            nemotale_node_handle_path_clip_and_render_event,
             ctx->node, ctx->group);
+
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_composite_event, tale, NULL);
@@ -370,13 +377,13 @@ _move_begin(struct Context *ctx)
     struct taletransition *trans;
 
     if ((ctx->move_state == 1) || (ctx->move_state == -1)) {
-        ERR("move is already stared");
+        ERR("move is ongoing");
         return;
     }
     trans = nemotale_transition_create(0, 1000);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
+            _nemotale_handle_canvas_update_event, canvas, tale);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_node_handle_path_damage_event,
@@ -384,31 +391,20 @@ _move_begin(struct Context *ctx)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
+            ctx->node, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_transform_event,
-            NULL, ctx->one_circle);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_path);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_rect);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_text);
+            NULL, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event,
-            NULL, ctx->group);
+            NULL, ctx->one_group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_render_event,
+            nemotale_node_handle_path_clip_and_render_event,
             ctx->node, ctx->group);
+
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_composite_event, tale, NULL);
@@ -507,52 +503,34 @@ _wipe_begin(struct Context *ctx)
     struct taletransition *trans;
 
     if ((ctx->wipe_state == 1) || (ctx->wipe_state == -1)) {
-        ERR("wipe is already stared");
+        ERR("wipe is ongoing");
         return;
     }
     trans = nemotale_transition_create(0, 2000);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_handle_canvas_update_event, canvas, tale);
-#if 0
+            _nemotale_handle_canvas_update_event, canvas, tale);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_node_handle_path_damage_event,
             ctx->node, ctx->group);
     nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_node_handle_path_damage_event,
             ctx->node, ctx->one_clip);
-#endif
-
-#if 1
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_transform_event,
             NULL, ctx->one_clip);
-#endif
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event,
             NULL, ctx->one_clip);
-#if 0
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->group);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_update_event,
-            NULL, ctx->group);
-#endif
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event,
-            ctx->node, ctx->one_clip);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_node_handle_path_clip_and_render_event,
             ctx->node, ctx->group);
+
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_composite_event, tale, NULL);
@@ -616,10 +594,10 @@ _wipe_begin(struct Context *ctx)
                 0.7f, 110);
         nemotale_transition_attach_dattr(trans,
                 NTPATH_TRANSFORM_ATX(ctx->one_clip),
-                1.0f, 110);
+                1.0f, 140);
         nemotale_transition_attach_dattr(trans,
                 NTPATH_TRANSFORM_ATY(ctx->one_clip),
-                1.0f, 110);
+                1.0f, 140);
 
         ctx->wipe_state = 1;
     }
@@ -737,13 +715,18 @@ int main()
     ctx->one_stroke_w = 3;
     ctx->one_bg = one;
 
+    struct pathone *one_group;
+    one_group = nemotale_path_create_group();
+    nemotale_path_attach_one(group, one_group);
+    ctx->one_group = one_group;
+
     // Circle
     one = nemotale_path_create_circle(50);
     nemotale_path_set_id(one, "circle");
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 0, 0, 0.5);
     nemotale_path_translate(one, 10, 10);
-    nemotale_path_attach_one(group, one);
+    nemotale_path_attach_one(one_group, one);
     ctx->one_circle = one;
 
     // Path Star
@@ -755,7 +738,7 @@ int main()
     nemotale_path_translate(one, 110, 10);
     nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
     nemotale_path_set_pivot(one, 1, 0);
-    nemotale_path_attach_one(group, one);
+    nemotale_path_attach_one(one_group, one);
     ctx->one_path = one;
 
     // Rect
@@ -766,7 +749,7 @@ int main()
     nemotale_path_translate(one, 10, 110);
     nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
     nemotale_path_set_pivot(one, 0, 1);
-    nemotale_path_attach_one(group, one);
+    nemotale_path_attach_one(one_group, one);
     ctx->one_rect = one;
 
     // Text
@@ -780,7 +763,7 @@ int main()
     nemotale_path_translate(one, 110, 110);
     nemotale_path_set_pivot_type(one, NEMOTALE_PATH_PIVOT_RATIO);
     nemotale_path_set_pivot(one, 1, 1);
-	nemotale_path_attach_one(group, one);
+	nemotale_path_attach_one(one_group, one);
 	nemotale_path_load_text(one, "A", 1);
     ctx->one_text = one;
 
@@ -790,10 +773,9 @@ int main()
     nemotale_path_attach_style(one, NULL);
     nemotale_path_translate(one, 0, 1);
     nemotale_path_translate(one, 0, -1);
-    nemotale_path_set_clip(ctx->group, one);
+    nemotale_path_set_clip(ctx->one_group, one);
     ctx->one_clip = one;
 
-    nemotale_path_update_one(ctx->one_clip);
     nemotale_path_update_one(group);
     nemotale_node_render_path(node, group);
     nemotale_composite(tale, NULL);

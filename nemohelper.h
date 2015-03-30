@@ -28,16 +28,13 @@ _transit_damage_path(struct taletransition *trans, struct talenode *node, struct
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
-            nemotale_node_handle_path_damage_event,
-            node, one);
+            nemotale_node_handle_path_damage_event, node, one);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event,
-            node, one);
+            nemotale_node_handle_path_damage_event, node, one);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_clip_and_render_event,
-            node, one);
+            nemotale_node_handle_path_clip_and_render_event, node, one);
 }
 
 static inline void
@@ -45,10 +42,10 @@ _transit_transform_path(struct taletransition *trans, struct pathone *one)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, one);
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(one));
+            nemotale_handle_path_transform_event, NULL, one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_update_event, NULL, one);
 }
 
 static inline void

@@ -15,12 +15,11 @@ struct Context {
     struct nemocanvas *canvas;
     struct talenode *node;
 
-    struct pathone *group;
+    struct pathone *group, *icon_group, *zoom_group;
     struct pathone *one_bg;
     double one_stroke_w;
-    struct pathone *one1, *one1_txt, *one1_txt2;
-    struct pathone *one2, *one2_txt, *one2_txt2;
-    struct pathone *one3, *one3_txt, *one3_txt2;
+    struct pathone *one1, *one11, *one2, *one3, *one31, *one32, *one33, *one34;
+    struct pathone *one4, *one41, *one42, *one43, *one44, *one45;
     int w, h;
 };
 
@@ -67,53 +66,122 @@ _fade_begin(struct Context *ctx)
     struct nemocanvas *canvas = ctx->canvas;
     struct nemotool *tool = nemocanvas_get_tool(canvas);
     struct nemotale *tale =nemocanvas_get_userdata(canvas);
-    struct taletransition *trans1, *trans2, *trans3;
+    struct taletransition *trans1, *trans2, *trans3, *trans4;
 
-    LOG("fade start");
-
-    trans1 = _transit_create(canvas, 0, 500, NEMOEASE_CUBIC_OUT_TYPE);
+    trans1 = _transit_create(canvas, 1000, 3000, NEMOEASE_CUBIC_OUT_TYPE);
     _transit_damage_path(trans1, ctx->node, ctx->group);
-    //_transit_transform_path(trans, ctx->group);
+    _transit_transform_path(trans1, ctx->zoom_group);
     _transit_go(trans1, canvas);
 
-    trans2 = _transit_create(canvas, 1000, 500, NEMOEASE_CUBIC_OUT_TYPE);
+    nemotale_path_transform_enable(ctx->zoom_group);
+    nemotale_transition_attach_signal(trans1,
+            NTPATH_DESTROY_SIGNAL(ctx->zoom_group));
+    nemotale_transition_attach_dattr(trans1,
+            NTPATH_TRANSFORM_ATSX(ctx->zoom_group), 1.0f, 1.0f);
+    nemotale_transition_attach_dattr(trans1,
+            NTPATH_TRANSFORM_ATSY(ctx->zoom_group), 1.0f, 1.0f);
+    nemotale_transition_attach_dattr(trans1,
+            NTPATH_TRANSFORM_ATX(ctx->zoom_group), 1.0f, 0);
+    nemotale_transition_attach_dattr(trans1,
+            NTPATH_TRANSFORM_ATY(ctx->zoom_group), 1.0f, 0);
+
+    trans2 = _transit_create(canvas, 2000, 2000, NEMOEASE_CUBIC_IN_TYPE);
     _transit_damage_path(trans2, ctx->node, ctx->group);
     _transit_go(trans2, canvas);
 
-    trans3 = _transit_create(canvas, 2000, 500, NEMOEASE_CUBIC_OUT_TYPE);
+    nemotale_transition_attach_signal(trans2,
+            NTPATH_DESTROY_SIGNAL(ctx->one4));
+    nemotale_transition_attach_dattrs(trans2,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one4)),
+            4.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+
+    trans3 = _transit_create(canvas, 4000, 2000, NEMOEASE_CUBIC_OUT_TYPE);
     _transit_damage_path(trans3, ctx->node, ctx->group);
+    _transit_transform_path(trans3, ctx->zoom_group);
     _transit_go(trans3, canvas);
 
-    // 1
-    nemotale_transition_attach_dattrs(trans1,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1)),
-            4, 1.0f, 0.0f, 1.0f, 0.0f, 0.5f);
-    nemotale_transition_attach_dattrs(trans1,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1_txt)),
-            4, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    nemotale_transition_attach_dattrs(trans1,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one1_txt2)),
-            4, 1.0f, 0.0f, 1.0f, 0.0f, 0.5f);
-    // 2
-    nemotale_transition_attach_dattrs(trans2,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one2)),
-            4, 1.0f, 1.0f, 1.0f, 0.0f, 0.5f);
-    nemotale_transition_attach_dattrs(trans2,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one2_txt)),
-            4, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    nemotale_transition_attach_dattrs(trans2,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one2_txt2)),
-            4, 1.0f, 1.0f, 1.0f, 0.0f, 0.5f);
-    // 3
+    nemotale_path_transform_enable(ctx->zoom_group);
+    nemotale_transition_attach_signal(trans3,
+            NTPATH_DESTROY_SIGNAL(ctx->zoom_group));
+    nemotale_transition_attach_dattr(trans3,
+            NTPATH_TRANSFORM_ATY(ctx->zoom_group), 1.0f, 230);
+
     nemotale_transition_attach_dattrs(trans3,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one41)),
+            4.0f, 1.0f, 0.5f, 0.0f, 0.0f, 0.0f);
+    nemotale_transition_attach_dattrs(trans3,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one42)),
+            4.0f, 1.0f, 0.0f, 0.0f, 0.5f, 0.0f);
+    nemotale_transition_attach_dattrs(trans3,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one43)),
+            4.0f, 1.0f, 0.0f, 0.0f, 0.5f, 0.0f);
+    nemotale_transition_attach_dattrs(trans3,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one44)),
+            4.0f, 1.0f, 0.5f, 0.0f, 0.5f, 0.0f);
+    nemotale_transition_attach_dattrs(trans3,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one45)),
+            4.0f, 1.0f, 0.5f, 0.0f, 1.0f, 0.0f);
+
+    trans4 = _transit_create(canvas, 4000, 2000, NEMOEASE_CUBIC_OUT_TYPE);
+    _transit_damage_path(trans4, ctx->node, ctx->group);
+    _transit_transform_path(trans4, ctx->icon_group);
+    _transit_transform_path(trans4, ctx->one3);
+    _transit_transform_path(trans4, ctx->one31);
+    _transit_transform_path(trans4, ctx->one32);
+    _transit_transform_path(trans4, ctx->one33);
+    _transit_transform_path(trans4, ctx->one34);
+    _transit_go(trans4, canvas);
+
+    nemotale_path_transform_enable(ctx->icon_group);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->icon_group));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATY(ctx->icon_group), 1.0f, 300);
+
+    nemotale_path_transform_enable(ctx->one3);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->one3));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATX(ctx->one3), 1.0f, 0);
+    nemotale_transition_attach_dattrs(trans4,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one3)),
-            4, 1.0f, 0.0f, 0.0f, 1.0f, 0.5f);
-    nemotale_transition_attach_dattrs(trans3,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one3_txt)),
-            4, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    nemotale_transition_attach_dattrs(trans3,
-            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one3_txt2)),
-            4, 1.0f, 0.0f, 0.0f, 1.0f, 0.5f);
+            4.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f);
+
+    nemotale_path_transform_enable(ctx->one31);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->one31));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATX(ctx->one31), 1.0f, 200);
+    nemotale_transition_attach_dattrs(trans4,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one31)),
+            4.0f, 1.0f, 1.0f, 1.0f, 0.0f, 1.0f);
+
+    nemotale_path_transform_enable(ctx->one32);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->one32));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATX(ctx->one32), 1.0f, 400);
+    nemotale_transition_attach_dattrs(trans4,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one32)),
+            4.0f, 1.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+    nemotale_path_transform_enable(ctx->one33);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->one33));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATX(ctx->one33), 1.0f, 600);
+    nemotale_transition_attach_dattrs(trans4,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one33)),
+            4.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+
+    nemotale_path_transform_enable(ctx->one34);
+    nemotale_transition_attach_signal(trans4,
+            NTPATH_DESTROY_SIGNAL(ctx->one34));
+    nemotale_transition_attach_dattr(trans4,
+            NTPATH_TRANSFORM_ATX(ctx->one34), 1.0f, 800);
+    nemotale_transition_attach_dattrs(trans4,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one34)),
+            4.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
 }
 
 static void
@@ -157,7 +225,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
 
 int main()
 {
-    int w = 320, h = 190;
+    int w = 300, h = 400;
     struct Context *ctx = malloc(sizeof(struct Context));
     ctx->w = w;
     ctx->h = h;
@@ -210,107 +278,144 @@ int main()
     ctx->one_stroke_w = 3;
     ctx->one_bg = one;
 
+    struct pathone *icon_group;
+    icon_group = nemotale_path_create_group();
+    nemotale_path_attach_one(group, icon_group);
+    nemotale_path_translate(icon_group, -1, 0);
+    nemotale_path_translate(icon_group, 1, 0);
+    ctx->icon_group = icon_group;
+
+    double sy = -300;
     // 1
-    one = nemotale_path_create_rect(50, 50);
-    nemotale_path_set_id(one, "A-rect");
+    one = nemotale_path_create_text();
+    nemotale_path_set_id(one, "one1");
     nemotale_path_attach_style(one, NULL);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 0);
-    nemotale_path_translate(one, 10, 10);
-    nemotale_path_attach_one(group, one);
+	nemotale_path_set_font_family(NTPATH_STYLE(one), "LiberationMono");
+	nemotale_path_set_font_size(NTPATH_STYLE(one), 80);
+	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 0.8);
+    nemotale_path_translate(one, 0, sy);
+	nemotale_path_attach_one(icon_group, one);
+	nemotale_path_load_text(one, "1600", 4);
     ctx->one1 = one;
 
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "A-text");
+    one = nemotale_path_create_rect(150, 150);
+    nemotale_path_set_id(one, "one11");
     nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 50);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 0, 0);
-    nemotale_path_translate(one, 20, 10);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "A", 1);
-    ctx->one1_txt = one;
-
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "A-text2");
-    nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 25);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 0);
-    nemotale_path_translate(one, 70, 10);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "City Taxi Bla Bla",
-            strlen("City Taxi Bla Bla"));
-    ctx->one1_txt2 = one;
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.4, 0.4, 0.4, 1.0);
+    nemotale_path_translate(one, 150, sy);
+    nemotale_path_attach_one(icon_group, one);
+    ctx->one11 = one;
 
     // 2
-    one = nemotale_path_create_rect(50, 50);
-    nemotale_path_set_id(one, "B-rect");
+    one = nemotale_path_create_rect(300, 100);
+    nemotale_path_set_id(one, "one2");
     nemotale_path_attach_style(one, NULL);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 0, 0);
-    nemotale_path_translate(one, 10, 70);
-    nemotale_path_attach_one(group, one);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 1.0);
+    nemotale_path_translate(one, 0, 50 + sy);
+    nemotale_path_attach_one(icon_group, one);
     ctx->one2 = one;
 
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "B-text");
-    nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 50);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 0, 0);
-    nemotale_path_translate(one, 20, 70);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "B", 1);
-    ctx->one2_txt = one;
-
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "B-text2");
-    nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 25);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 0, 0);
-    nemotale_path_translate(one, 70, 70);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "Hotel Shuttle",
-            strlen("Hotel Shuttle"));
-    ctx->one2_txt2 = one;
-
     // 3
-    one = nemotale_path_create_rect(50, 50);
-    nemotale_path_set_id(one, "C-rect");
+    one = nemotale_path_create_rect(200, 150);
+    nemotale_path_set_id(one, "one3");
     nemotale_path_attach_style(one, NULL);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 1, 0);
-    nemotale_path_translate(one, 10, 130);
-    nemotale_path_attach_one(group, one);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 0, 0, 0.0);
+    nemotale_path_translate(one, -300, 150 + sy);
+    nemotale_path_attach_one(icon_group, one);
     ctx->one3 = one;
 
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "C-text");
+    one = nemotale_path_create_rect(200, 150);
+    nemotale_path_set_id(one, "one31");
     nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 50);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 0, 0);
-    nemotale_path_translate(one, 20, 130);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "C", 1);
-    ctx->one3_txt = one;
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 0, 0.0);
+    nemotale_path_translate(one, -100, 150 + sy);
+    nemotale_path_attach_one(icon_group, one);
+    ctx->one31 = one;
 
-    one = nemotale_path_create_text();
-    nemotale_path_set_id(one, "C-text2");
+    one = nemotale_path_create_rect(200, 150);
+    nemotale_path_set_id(one, "one32");
     nemotale_path_attach_style(one, NULL);
-	nemotale_path_set_font_family(NTPATH_STYLE(one),
-            "LiberationMono");
-	nemotale_path_set_font_size(NTPATH_STYLE(one), 25);
-	nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 1, 0);
-    nemotale_path_translate(one, 70, 130);
-	nemotale_path_attach_one(group, one);
-	nemotale_path_load_text(one, "Parking Lot",
-            strlen("Parking Lot"));
-    ctx->one3_txt2 = one;
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 1, 0.0);
+    nemotale_path_translate(one, 0, 150 + sy);
+    nemotale_path_attach_one(icon_group, one);
+    ctx->one32 = one;
+
+    one = nemotale_path_create_rect(200, 150);
+    nemotale_path_set_id(one, "one33");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 0.0);
+    nemotale_path_translate(one, 100, 150 + sy);
+    nemotale_path_attach_one(icon_group, one);
+    ctx->one33 = one;
+
+    one = nemotale_path_create_rect(200, 150);
+    nemotale_path_set_id(one, "one34");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 1, 0.0);
+    nemotale_path_translate(one, 200, 150 + sy);
+    nemotale_path_attach_one(icon_group, one);
+    ctx->one34 = one;
+
+    // 4
+    one = nemotale_path_create_text();
+    nemotale_path_set_id(one, "one4");
+    nemotale_path_attach_style(one, NULL);
+	nemotale_path_set_font_family(NTPATH_STYLE(one), "LiberationMono");
+	nemotale_path_set_font_size(NTPATH_STYLE(one), 80);
+	nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 1, 0.0);
+	nemotale_path_load_text(one, "KITCHEN", 7);
+    nemotale_path_translate(one, 0, 300 + sy);
+	nemotale_path_attach_one(icon_group, one);
+    ctx->one4 = one;
+
+    struct pathone *zoom_group;
+    zoom_group = nemotale_path_create_group();
+    nemotale_path_attach_one(group, zoom_group);
+    nemotale_path_scale(zoom_group, 2, 2);
+    nemotale_path_translate(zoom_group, -500, -200);
+    ctx->zoom_group = zoom_group;
+
+    // 5
+    one = nemotale_path_create_rect(100, 150);
+    nemotale_path_set_id(one, "one41");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.5, 0, 0, 1.0);
+    nemotale_path_translate(one, 120, 400 + sy);
+    nemotale_path_attach_one(zoom_group, one);
+    ctx->one41 = one;
+
+    one = nemotale_path_create_rect(150, 100);
+    nemotale_path_set_id(one, "one42");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 0.5, 1.0);
+    nemotale_path_translate(one, 0, 500 + sy);
+    nemotale_path_attach_one(zoom_group, one);
+    ctx->one42 = one;
+
+    one = nemotale_path_create_rect(150, 100);
+    nemotale_path_set_id(one, "one43");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 0, 0.5, 1.0);
+    nemotale_path_translate(one, 0, 500 + sy);
+    nemotale_path_attach_one(zoom_group, one);
+    ctx->one43 = one;
+
+    one = nemotale_path_create_rect(100, 150);
+    nemotale_path_set_id(one, "one44");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.5, 0, 0.5, 1.0);
+    nemotale_path_translate(one, 60, 580 + sy);
+    nemotale_path_attach_one(zoom_group, one);
+    ctx->one44 = one;
+
+    one = nemotale_path_create_rect(100, 150);
+    nemotale_path_set_id(one, "one45");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.5, 0, 1, 1.0);
+    nemotale_path_translate(one, 260, 430 + sy);
+    nemotale_path_attach_one(zoom_group, one);
+    ctx->one45 = one;
+
     nemotale_path_update_one(group);
     nemotale_node_render_path(node, group);
     nemotale_composite(tale, NULL);
