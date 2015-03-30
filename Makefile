@@ -10,7 +10,7 @@ ASST=mischelper glhelper fbohelper
 ## ecore ecore-evas evas
 LIB=util.o talehelper.o cairo_view.o wl_window.o view.o text.o #$(ASST)
 
-TEST=future2 #future nemoeffect
+TEST=future3 #future2 #future nemoeffect
 	#nemoeffect nemotest
 
 all: $(LIB) test
@@ -24,6 +24,10 @@ test:
 	done;
 
 nemoeffect:
+	$(CC) -g -c $$i.c $(CFLAGS)
+	$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS)
+
+future3:
 	$(CC) -g -c $$i.c $(CFLAGS)
 	$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS)
 
