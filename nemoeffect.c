@@ -100,22 +100,6 @@ _fade_begin(struct Context *ctx)
             ctx->node, ctx->group);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_circle);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_path);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_rect);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_handle_path_transform_event,
-            NULL, ctx->one_text);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event,
             NULL, ctx->group);
     nemotale_transition_attach_event(trans,
