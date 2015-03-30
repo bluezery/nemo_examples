@@ -281,8 +281,6 @@ int main()
     struct pathone *icon_group;
     icon_group = nemotale_path_create_group();
     nemotale_path_attach_one(group, icon_group);
-    nemotale_path_translate(icon_group, -1, 0);
-    nemotale_path_translate(icon_group, 1, 0);
     ctx->icon_group = icon_group;
 
     double sy = -300;
