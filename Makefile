@@ -27,6 +27,10 @@ nemoeffect:
 	$(CC) -g -c $$i.c $(CFLAGS)
 	$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS)
 
+future4:
+	$(CC) -g -c $$i.c $(CFLAGS)
+	$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS)
+
 future3:
 	$(CC) -g -c $$i.c $(CFLAGS)
 	$(CC) -g -o $$i $$i.o $(LIB) $(LDFLAGS)
