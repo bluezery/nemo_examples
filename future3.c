@@ -115,7 +115,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
         tap->item = nemotale_path_pick_one(
                 ctx->group, event->x, event->y);
         if (ntaps == 1) {
-            nemocanvas_move(canvas, taps[0]->serial);
+            //nemocanvas_move(canvas, taps[0]->serial);
         } else if (ntaps == 2) {
             nemocanvas_pick(canvas,
                     taps[0]->serial,
@@ -149,8 +149,8 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                 }
             }
         }
-    } else {
-        if (ntaps == 3) {
+    } else if (type & NEMOTALE_MOTION_EVENT) {
+        if (ntaps == 1) {
             // scrolling
             if ((ctx->prev_event_y == -9999) ||
                 (ctx->prev_event_x == -9999)) {
