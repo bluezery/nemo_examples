@@ -72,8 +72,8 @@ _fade_begin(struct Context *ctx)
     LOG("fade start");
 
     trans1 = _transit_create(canvas, 0, 500, NEMOEASE_CUBIC_OUT_TYPE);
-    _transit_damage_path(trans1, ctx->node, ctx->group);
     //_transit_transform_path(trans, ctx->group);
+    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_go(trans1, canvas);
 
     trans2 = _transit_create(canvas, 1000, 500, NEMOEASE_CUBIC_OUT_TYPE);

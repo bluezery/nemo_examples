@@ -64,8 +64,8 @@ _move(struct Context *ctx)
     struct taletransition *trans1, *trans2;
 
     trans1 = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_IN_TYPE);
-    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_transform_path(trans1, ctx->c_group);
+    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_go(trans1, canvas);
 
     struct pathone *one;

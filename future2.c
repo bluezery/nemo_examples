@@ -69,8 +69,8 @@ _fade_begin(struct Context *ctx)
     struct taletransition *trans1, *trans2, *trans3, *trans4;
 
     trans1 = _transit_create(canvas, 1000, 3000, NEMOEASE_CUBIC_OUT_TYPE);
-    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_transform_path(trans1, ctx->zoom_group);
+    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_go(trans1, canvas);
 
     nemotale_path_transform_enable(ctx->zoom_group);
@@ -96,8 +96,8 @@ _fade_begin(struct Context *ctx)
             4.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
 
     trans3 = _transit_create(canvas, 4000, 2000, NEMOEASE_CUBIC_OUT_TYPE);
-    _transit_damage_path(trans3, ctx->node, ctx->group);
     _transit_transform_path(trans3, ctx->zoom_group);
+    _transit_damage_path(trans3, ctx->node, ctx->group);
     _transit_go(trans3, canvas);
 
     nemotale_path_transform_enable(ctx->zoom_group);
@@ -123,13 +123,13 @@ _fade_begin(struct Context *ctx)
             4.0f, 1.0f, 0.5f, 0.0f, 1.0f, 0.0f);
 
     trans4 = _transit_create(canvas, 4000, 2000, NEMOEASE_CUBIC_OUT_TYPE);
-    _transit_damage_path(trans4, ctx->node, ctx->group);
     _transit_transform_path(trans4, ctx->icon_group);
     _transit_transform_path(trans4, ctx->one3);
     _transit_transform_path(trans4, ctx->one31);
     _transit_transform_path(trans4, ctx->one32);
     _transit_transform_path(trans4, ctx->one33);
     _transit_transform_path(trans4, ctx->one34);
+    _transit_damage_path(trans4, ctx->node, ctx->group);
     _transit_go(trans4, canvas);
 
     nemotale_path_transform_enable(ctx->icon_group);

@@ -146,6 +146,33 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
     }
 }
 
+static void
+_timeout(struct nemotimer *timer, void *data)
+{
+    printf("%s:%d\n", __func__, __LINE__);
+    struct Context *ctx = data;
+    struct nemocanvas *canvas = ctx->canvas;
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    struct nemotale *tale =nemocanvas_get_userdata(canvas);
+    struct taletransition *trans;
+    trans = _transit_create(canvas, 0, 500, NEMOEASE_CUBIC_OUT_TYPE);
+    _transit_transform_path(trans, ctx->one_pie);
+    _transit_damage_path(trans, ctx->node, ctx->group);
+    _transit_go(trans, canvas);
+
+    double r = (double)rand()/RAND_MAX * 2 * M_PI;
+    double r2 = (double)rand()/RAND_MAX * 2 * M_PI;
+    double r3 = (double)rand()/RAND_MAX * 80;
+    nemotale_transition_attach_dattr(trans,
+            NTPATH_CIRCLE_ATSTARTANGLE(ctx->one_pie), 1.0f, r);
+    nemotale_transition_attach_dattr(trans,
+            NTPATH_CIRCLE_ATENDANGLE(ctx->one_pie), 1.0f, r2);
+    nemotale_transition_attach_dattr(trans,
+            NTPATH_CIRCLE_ATINNERRADIUS(ctx->one_pie), 1.0f, r3);
+
+    nemotimer_set_timeout(timer, 1000);
+}
+
 int main()
 {
     int w = 320, h = 320;
@@ -194,7 +221,7 @@ int main()
     nemotale_path_set_id(one, "bg");
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_operator(one, CAIRO_OPERATOR_SOURCE);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 1, 0.5);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 1, 0.0);
     nemotale_path_set_stroke_width(NTPATH_STYLE(one), 3);
     nemotale_path_attach_one(group, one);
     ctx->one_bg = one;
@@ -214,6 +241,11 @@ int main()
 
     nemocanvas_damage(canvas, 0, 0, 0, 0);
     nemocanvas_commit(canvas);
+
+    struct nemotimer *timer = nemotimer_create(tool);
+    nemotimer_set_timeout(timer, 1000);
+    nemotimer_set_callback(timer, _timeout);
+    nemotimer_set_userdata(timer, ctx);
 
     nemotool_run(tool);
 
