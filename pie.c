@@ -51,12 +51,6 @@ _canvas_resize(struct nemocanvas *canvas, int32_t w, int32_t h)
 }
 
 static void
-_fade_end(struct taletransition *trans, void *_ctx, void *data)
-{
-    LOG("fade end");
-}
-
-static void
 _fade_begin(struct Context *ctx)
 {
     struct nemocanvas *canvas = ctx->canvas;
@@ -66,6 +60,7 @@ _fade_begin(struct Context *ctx)
 
     LOG("fade start");
 
+#if 0
     trans1 = _transit_create(canvas, 0, 500, NEMOEASE_CUBIC_OUT_TYPE);
     _transit_damage_path(trans1, ctx->node, ctx->group);
     //_transit_transform_path(trans, ctx->group);
@@ -109,6 +104,7 @@ _fade_begin(struct Context *ctx)
     nemotale_transition_attach_dattrs(trans3,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->one3_txt2)),
             4, 1.0f, 0.0f, 0.0f, 1.0f, 0.5f);
+#endif
 }
 
 static void
@@ -152,7 +148,7 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
 
 int main()
 {
-    int w = 320, h = 190;
+    int w = 320, h = 320;
     struct Context *ctx = malloc(sizeof(struct Context));
     ctx->w = w;
     ctx->h = h;
@@ -201,13 +197,12 @@ int main()
     nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 1, 0.5);
     nemotale_path_set_stroke_width(NTPATH_STYLE(one), 3);
     nemotale_path_attach_one(group, one);
-    ctx->one_stroke_w = 3;
     ctx->one_bg = one;
 
     one = nemotale_path_create_circle(160);
     nemotale_path_set_id(one, "pie");
+    nemotale_path_attach_style(one, NULL);
     nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 0, 0.5);
-    nemotale_path_translate(one, 160, 160);
     nemotale_path_set_pie_circle(one, 0, M_PI/2.0f);
     nemotale_path_set_donut_circle(one, 80);
     nemotale_path_attach_one(group, one);
@@ -220,7 +215,6 @@ int main()
     nemocanvas_damage(canvas, 0, 0, 0, 0);
     nemocanvas_commit(canvas);
 
-    _fade_begin(ctx);
     nemotool_run(tool);
 
     nemotale_path_destroy_one(one);

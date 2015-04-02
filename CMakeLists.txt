@@ -14,7 +14,7 @@ FOREACH(i ${PKGS_CFLAGS})
     SET(CFLAGS "${CFLAGS} ${i}")
 ENDFOREACH(i)
 
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -g -fPIC")
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=auto -Wall -g -fPIC")
 SET(CMAKE_EXE_LINKER_FLAGS "-Wl,-z,defs -Wl,--as-needed -Wl,--hash-style=both")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS}")
 
@@ -28,3 +28,6 @@ TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m)
 
 ADD_EXECUTABLE(future3 future3.c)
 TARGET_LINK_LIBRARIES(future3 helper "${PKGS_LIBRARIES}" m)
+
+ADD_EXECUTABLE(pie pie.c)
+TARGET_LINK_LIBRARIES(pie helper "${PKGS_LIBRARIES}" m)
