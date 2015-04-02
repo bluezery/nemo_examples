@@ -72,8 +72,8 @@ _zoom_begin(struct Context *ctx, double x, double y, double zoom)
     struct taletransition *trans1, *trans2;
 
     trans1 = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_IN_TYPE);
-    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_transform_path(trans1, ctx->icon_group);
+    _transit_damage_path(trans1, ctx->node, ctx->group);
     _transit_go(trans1, canvas);
 
     nemotale_path_transform_enable(ctx->icon_group);

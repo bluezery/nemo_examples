@@ -18,7 +18,8 @@ struct Context {
     struct pathone *group, *c_group;
     struct pathone *one_bg;
     struct pathone *top, *bottom;
-    struct pathone *c1, *b1, *c2;
+    struct pathone *c1, *b1;
+    struct pathone *c2, *b2;
     int w, h;
     int prev_event_y;
     int prev_event_x;
@@ -67,9 +68,33 @@ _move(struct Context *ctx)
     _transit_transform_path(trans1, ctx->c_group);
     _transit_go(trans1, canvas);
 
+    struct pathone *one;
+    one = nemotale_path_create_rect(300, 350);
+    nemotale_path_set_id(one, "c2");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0.0, 0.0, 1.0, 0.0);
+    nemotale_path_translate(one, 0, 450);
+    nemotale_path_attach_one(ctx->c_group, one);
+    ctx->c2 = one;
+
+    one = nemotale_path_create_rect(300, 50);
+    nemotale_path_set_id(one, "b2");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1.0, 1.0, 0.0, 0.5);
+    nemotale_path_translate(one, 0, 850);
+    nemotale_path_attach_one(ctx->c_group, one);
+    ctx->b2 = one;
+
     nemotale_path_transform_enable(ctx->c_group);
+    nemotale_path_transform_enable(ctx->b2);
+    nemotale_transition_attach_signal(trans1,
+            NTPATH_DESTROY_SIGNAL(ctx->b2));
     nemotale_transition_attach_signal(trans1,
             NTPATH_DESTROY_SIGNAL(ctx->c_group));
+    /*
+    nemotale_transition_attach_dattr(trans1,
+            NTPATH_TRANSFORM_ATY(ctx->b2), 1.0f, -300);
+            */
     nemotale_transition_attach_dattr(trans1,
             NTPATH_TRANSFORM_ATY(ctx->c_group), 1.0f, -500);
     nemotale_transition_attach_signal(trans1,
@@ -77,6 +102,10 @@ _move(struct Context *ctx)
     nemotale_transition_attach_dattrs(trans1,
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->b1)),
             4.0f, 1.0f, 1.0, 1.0, 0.0, 0.0);
+    nemotale_transition_attach_dattrs(trans1,
+            NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ctx->c2)),
+            4.0f, 1.0f, 0.0, 0.0, 1.0, 0.5);
+
 }
 
 static void
