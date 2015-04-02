@@ -58,18 +58,10 @@ _canvas_resize(struct nemocanvas *canvas, int32_t w, int32_t h)
 }
 
 static void
-_zoom_end(struct taletransition *trans, void *_ctx, void *data)
-{
-    LOG("fade end");
-}
-
-static void
 _zoom_begin(struct Context *ctx, double x, double y, double zoom)
 {
     struct nemocanvas *canvas = ctx->canvas;
-    struct nemotool *tool = nemocanvas_get_tool(canvas);
-    struct nemotale *tale =nemocanvas_get_userdata(canvas);
-    struct taletransition *trans1, *trans2;
+    struct taletransition *trans1;
 
     trans1 = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_IN_TYPE);
     _transit_transform_path(trans1, ctx->icon_group);
@@ -98,12 +90,10 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
 
     struct taletap *taps[16];
     int ntaps;
-    uint32_t id;
     struct taletap *tap;
 
     ntaps = nemotale_get_node_taps(tale, node, taps, type);
     tap = nemotale_get_tap(tale, event->device, type);
-    id = nemotale_node_get_id(node);
 
     if ((type & NEMOTALE_DOWN_EVENT) ||
         (type & NEMOTALE_UP_EVENT)) {
