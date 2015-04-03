@@ -24,6 +24,22 @@ _transit_create(struct nemocanvas *canvas, int delay, int duration, uint32_t typ
 }
 
 static inline void
+_transit_add_event_start(struct taletransition *trans, nemotale_transition_dispatch_t callback, void *ctx, void *data)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_START,
+            callback, ctx, data);
+}
+
+static inline void
+_transit_add_event_end(struct taletransition *trans, nemotale_transition_dispatch_t callback, void *ctx, void *data)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_END,
+            callback, ctx, data);
+}
+
+static inline void
 _transit_damage_path(struct taletransition *trans, struct talenode *node, struct pathone *one)
 {
     nemotale_transition_attach_event(trans,

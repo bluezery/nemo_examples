@@ -99,6 +99,7 @@ static int nemotale_dispatch_canvas_event(struct nemocanvas *canvas, uint32_t ty
 	} else if (type & NEMOTOOL_TOUCH_MOTION_EVENT) {
 		nemotale_push_touch_motion_event(tale, event->serial, event->device, event->time, event->x, event->y);
 	}
+    return 0;
 }
 
 void nemotale_attach_canvas(struct nemotale *tale, struct nemocanvas *canvas, nemotale_dispatch_event_t dispatch)

@@ -85,12 +85,17 @@ list_data_remove(List *l, void *data)
             if (tmp->next)
                 tmp->next->prev = tmp->prev;
             tmp->info->cnt--;
-            if (tmp == l) {
-                ret = tmp->prev;
-            }
+            if (tmp == l) ret = tmp->prev;
+            if (tmp == tmp->info->first)
+                tmp->info->first = tmp->next;
+
             if (!tmp->prev && !tmp->next) {
                 free(tmp->info);
             }
+            tmp->prev = NULL;
+            tmp->next = NULL;
+            tmp->info = NULL;
+            tmp->data = NULL;
             free(tmp);
             break;
         }

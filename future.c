@@ -203,8 +203,8 @@ int main()
     nemotale_path_set_id(one, "bg");
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_operator(one, CAIRO_OPERATOR_SOURCE);
-    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1, 1, 1, 1);
     nemotale_path_set_fill_color(NTPATH_STYLE(one), 1, 1, 1, 0.5);
+    nemotale_path_set_stroke_color(NTPATH_STYLE(one), 1, 1, 1, 1);
     nemotale_path_set_stroke_width(NTPATH_STYLE(one), 3);
     nemotale_path_attach_one(group, one);
     ctx->one_stroke_w = 3;

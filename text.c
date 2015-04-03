@@ -600,7 +600,7 @@ _font_list_get(int *num)
             FcPatternGetInteger(fs->fonts[i], FC_WEIGHT, 0, &_weight);
             FcPatternGetInteger(fs->fonts[i], FC_WIDTH, 0, &_width);
             FcPatternGetInteger(fs->fonts[i], FC_SPACING, 0, &_spacing);
-            font = _font_load(_family, _style, _slant, _weight,
+            font = _font_load((char *)_family, (char *)_style, _slant, _weight,
                     _width, _spacing);
             fl = list_data_insert(fl, font);
         }
@@ -721,14 +721,14 @@ _font_load(const char *font_family, const char *font_style, int font_slant, int 
 const char *
 _font_family_get(MyFont *font)
 {
-    RET_IF(!font);
+    RET_IF(!font, NULL);
     return font->font_family;
 }
 
 const char *
 _font_style_get(MyFont *font)
 {
-    RET_IF(!font);
+    RET_IF(!font, NULL);
     return font->font_style;
 }
 
@@ -1037,7 +1037,6 @@ _text_draw_cairo(cairo_t *cr, Text *t)
 
     cairo_save(cr);
 
-    double dx = 1, dy = 1;
     cairo_set_scaled_font(cr, t->font->cairo_font);
     cairo_set_font_size(cr,
             t->font_size * t->font->ft_face->units_per_EM /
