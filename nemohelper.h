@@ -3,12 +3,16 @@
 
 #include <nemotool.h>
 #include <nemocanvas.h>
+#include <nemoegl.h>
 #include <nemotale.h>
 #include <talenode.h>
 #include <taletransition.h>
 #include <talemisc.h>
 #include "talehelper.h"
 
+/*******************************/
+/***** TRANSITION **************/
+/*******************************/
 static inline struct taletransition *
 _transit_create(struct nemocanvas *canvas, int delay, int duration, uint32_t type)
 {
@@ -67,7 +71,6 @@ _transit_transform_path(struct taletransition *trans, struct pathone *one)
 static inline void
 _transit_go(struct taletransition *trans, struct nemocanvas *canvas)
 {
-    struct nemotool *tool = nemocanvas_get_tool(canvas);
     struct nemotale *tale =nemocanvas_get_userdata(canvas);
 
     nemotale_transition_attach_event(trans,
@@ -77,7 +80,135 @@ _transit_go(struct taletransition *trans, struct nemocanvas *canvas)
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_canvas_flush_event, canvas, tale);
 
-    nemotale_dispatch_transition_timer_event(tool, trans);
+    nemotale_dispatch_canvas_transition(canvas, trans);
+}
+
+
+/*******************************/
+/***** WINDOW     **************/
+/*******************************/
+typedef enum
+{
+    WIN_TYPE_PIXMAN,
+    WIN_TYPE_EGL
+} _WinType;
+
+typedef struct _MyWin {
+    _WinType type;
+    int w, h;
+    struct nemotale *tale;
+    struct nemotool *tool;
+
+    // Pixman
+    struct nemocanvas *canvas;
+
+    // Egl
+    struct eglcontext *egl;
+    struct eglcanvas *egl_canvas;
+
+} _Win;
+
+static inline void
+_win_destroy(_Win *win)
+{
+    nemotale_destroy(win->tale);
+    if (win->type == WIN_TYPE_EGL) {
+        nemotool_destroy_egl_canvas(win->egl_canvas);
+        nemotool_destroy_egl(win->egl);
+    } else {
+        nemocanvas_destroy(win->canvas);
+    }
+}
+
+static inline _Win *
+_win_create(struct nemotool *tool, _WinType type, int w, int h, nemotale_dispatch_event_t _event_cb)
+{
+    _Win *win;
+    win = calloc(sizeof(_Win), 1);
+    win->tool = tool;
+    win->type = type;
+    win->w = w;
+    win->h = h;
+
+    struct nemotale *tale;
+    if (type == WIN_TYPE_EGL)
+    {
+        struct eglcontext *egl;
+        struct eglcanvas *egl_canvas;
+
+        egl = nemotool_create_egl(tool);
+        egl_canvas = nemotool_create_egl_canvas(egl, w, h);
+        nemocanvas_set_nemosurface(NTEGL_CANVAS(egl_canvas), NEMO_SHELL_SURFACE_TYPE_NORMAL);
+
+        tale = nemotale_create_egl(
+                NTEGL_DISPLAY(egl),
+                NTEGL_CONTEXT(egl),
+                NTEGL_CONFIG(egl));
+        nemotale_attach_egl(tale, (EGLNativeWindowType)NTEGL_WINDOW(egl_canvas));
+        nemotale_resize_egl(tale, w, h);
+        nemotale_attach_canvas(tale, NTEGL_CANVAS(egl_canvas), _event_cb);
+        win->egl = egl;
+        win->egl_canvas = egl_canvas;
+    } else {
+        struct nemocanvas *canvas;
+
+        canvas = nemocanvas_create(tool);
+        nemocanvas_set_size(canvas, w, h);
+        nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
+
+        nemocanvas_flip(canvas);
+        nemocanvas_clear(canvas);
+
+        tale = nemotale_create_pixman();
+        nemotale_attach_pixman(tale,
+                nemocanvas_get_data(canvas),
+                nemocanvas_get_width(canvas),
+                nemocanvas_get_height(canvas),
+                nemocanvas_get_stride(canvas));
+        nemotale_attach_canvas(tale, canvas, _event_cb);
+        win->canvas = canvas;
+    }
+    win->tale = tale;
+    return win;
+}
+
+static inline struct nemocanvas *
+_win_get_canvas(_Win *win)
+{
+    if (win->type == WIN_TYPE_EGL) {
+        return NTEGL_CANVAS(win->egl_canvas);
+    } else {
+        return win->canvas;
+    }
+}
+
+static inline struct nemotale *
+_win_get_tale(_Win *win)
+{
+    return win->tale;
+}
+
+static inline struct nemotool *
+_win_get_tool(_Win *win)
+{
+    return win->tool;
+}
+
+static inline void
+_win_render_prepare(_Win *win)
+{
+    if (win->type == WIN_TYPE_PIXMAN) {
+        nemotale_handle_canvas_update_event(NULL, win->canvas, win->tale);
+    }
+}
+
+static inline void
+_win_render(_Win *win)
+{
+    nemotale_composite(win->tale, NULL);
+    if (win->type == WIN_TYPE_PIXMAN) {
+        nemotale_handle_canvas_flush_event(NULL, win->canvas, NULL);
+    }
 }
 
 #endif

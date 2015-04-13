@@ -3,7 +3,6 @@
 
 #include <nemotool.h>
 #include <nemocanvas.h>
-#include <nemotimer.h>
 
 #include <nemotale.h>
 #include <talenode.h>
@@ -20,7 +19,7 @@
 extern void nemotale_handle_canvas_update_event(struct taletransition *trans, void *context, void *data);
 extern void nemotale_handle_canvas_flush_event(struct taletransition *trans, void *context, void *data);
 
-extern void nemotale_dispatch_transition_timer_event(struct nemotool *tool, struct taletransition *trans);
+extern void nemotale_dispatch_canvas_transition(struct nemocanvas *canvas, struct taletransition *trans);
 
 extern void nemotale_attach_canvas(struct nemotale *tale, struct nemocanvas *canvas, nemotale_dispatch_event_t dispatch);
 

@@ -13,7 +13,7 @@
 #include "util.h"
 #include "nemohelper.h"
 
-struct AP {
+struct Pie {
     int power;
     struct pathone *one;
     double start, end;
@@ -21,13 +21,14 @@ struct AP {
 };
 
 struct PieView {
-    List *aps;
-    List *aps_del;
-    struct Context *ctx;
-    bool dirty;
-    struct AP *selected;
-
     int r, ir;
+    bool dirty;
+    void *data;
+
+    List *pies;
+    List *pies_del;
+    struct Pie *selected;
+
     struct pathone *group;
     struct pathone *loading_one;
     struct taletransition *loading_trans;
@@ -47,6 +48,18 @@ struct Context {
     struct PieView *pieview;
 };
 
+static void
+_pieview_set_data(struct PieView *pieview, void *data)
+{
+    pieview->data = data;
+}
+
+static void *
+_pieview_get_data(struct PieView *pieview)
+{
+    return pieview->data;
+}
+
 static void _pieview_loading(struct PieView *view);
 static void
 _pieview_reloading(struct taletransition *trans, void *ctx, void *data)
@@ -57,7 +70,7 @@ _pieview_reloading(struct taletransition *trans, void *ctx, void *data)
 static void
 _pieview_loading(struct PieView *pieview)
 {
-    struct Context *ctx = pieview->ctx;
+    struct Context *ctx = _pieview_get_data(pieview);
     struct nemocanvas *canvas = ctx->canvas;
     struct taletransition *trans;
 
@@ -96,20 +109,28 @@ _pieview_loading(struct PieView *pieview)
     pieview->loading_trans = trans;
 }
 
+static struct PieView *
+_pieview_create()
+{
+    struct PieView *pieview;
+    pieview = calloc(sizeof(struct PieView), 1);
+    return pieview;
+}
+
 static void
 _pieview_destroy(struct PieView *pieview)
 {
     List *l, *ll;
-    struct AP *ap;
-    LIST_FOR_EACH_SAFE(pieview->aps, l, ll, ap) {
-        pieview->aps = list_data_remove(pieview->aps, ap);
-        nemotale_path_destroy_one(ap->one);
-        free(ap);
+    struct Pie *pie;
+    LIST_FOR_EACH_SAFE(pieview->pies, l, ll, pie) {
+        pieview->pies = list_data_remove(pieview->pies, pie);
+        nemotale_path_destroy_one(pie->one);
+        free(pie);
     }
-    LIST_FOR_EACH_SAFE(pieview->aps_del, l, ll, ap) {
-        pieview->aps_del = list_data_remove(pieview->aps_del, ap);
-        nemotale_path_destroy_one(ap->one);
-        free(ap);
+    LIST_FOR_EACH_SAFE(pieview->pies_del, l, ll, pie) {
+        pieview->pies_del = list_data_remove(pieview->pies_del, pie);
+        nemotale_path_destroy_one(pie->one);
+        free(pie);
     }
     if (pieview->group) nemotale_path_destroy_one(pieview->group);
     if (pieview->loading_one) nemotale_path_destroy_one(pieview->loading_one);
@@ -121,9 +142,9 @@ _pieview_destroy(struct PieView *pieview)
 }
 
 static int
-_pieview_get_count(struct PieView *pieview)
+_pieview_count(struct PieView *pieview)
 {
-    return list_count(pieview->aps);
+    return list_count(pieview->pies);
 }
 
 static int
@@ -131,65 +152,65 @@ _pieview_get_power(struct PieView *pieview)
 {
     int pow = 0;
     List *l;
-    struct AP *ap;
-    LIST_FOR_EACH(pieview->aps, l, ap) {
-        pow += ap->power;
+    struct Pie *pie;
+    LIST_FOR_EACH(pieview->pies, l, pie) {
+        pow += pie->power;
     }
     return pow;
 }
 
-static struct AP *
+static struct Pie *
 _pieview_add_ap(struct PieView *pieview, int power)
 {
-    struct AP *ap;
+    struct Pie *pie;
     struct pathone *one;
 
     double endangle = M_PI * 2;
-    int cnt = _pieview_get_count(pieview);
+    int cnt = _pieview_count(pieview);
     if (cnt > 0) {
-        struct AP *last = pieview->aps->data;
+        struct Pie *last = pieview->pies->data;
         endangle = NTPATH_CIRCLE(last->one)->startangle;
     }
 
-    ap = calloc(sizeof(struct AP), 1);
-    ap->power = power;
+    pie = calloc(sizeof(struct Pie), 1);
+    pie->power = power;
 
-    ap->r = (double)rand()/RAND_MAX;
-    ap->g = (double)rand()/RAND_MAX;
-    ap->b = (double)rand()/RAND_MAX;
+    pie->r = (double)rand()/RAND_MAX;
+    pie->g = (double)rand()/RAND_MAX;
+    pie->b = (double)rand()/RAND_MAX;
     one = nemotale_path_create_circle(pieview->r);
-    nemotale_path_set_data(one, ap);
+    nemotale_path_set_data(one, pie);
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_donut_circle(one, pieview->ir);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),
-            ap->r, ap->g, ap->b, 0.0);
+            pie->r, pie->g, pie->b, 0.0);
     nemotale_path_translate(one, 10, 10);
     nemotale_path_attach_one(pieview->group, one);
     nemotale_path_set_pie_circle(one, endangle, endangle);
-    ap->one = one;
+    pie->one = one;
 
-    pieview->aps = list_data_insert(pieview->aps, ap);
+    pieview->pies = list_data_insert(pieview->pies, pie);
     pieview->dirty = true;
 
-    return ap;
+    return pie;
 }
 
 static void
-_pieview_del_ap(struct PieView *pieview, struct AP *ap)
+_pieview_del_ap(struct PieView *pieview, struct Pie *pie)
 {
-    pieview->aps = list_data_remove(pieview->aps, ap);
-    pieview->aps_del = list_data_insert(pieview->aps_del, ap);
-    nemotale_path_set_data(ap->one, NULL);
+    pieview->pies = list_data_remove(pieview->pies, pie);
+    pieview->pies_del = list_data_insert(pieview->pies_del, pie);
+    nemotale_path_set_data(pie->one, NULL);
     pieview->dirty = true;
 }
 
 static void
-_pieview_select(struct PieView *pieview, struct AP *ap)
+_pieview_select(struct PieView *pieview, struct Pie *pie)
 {
-    struct Context *ctx = pieview->ctx;
+    struct Context *ctx = _pieview_get_data(pieview);
     struct nemocanvas *canvas = ctx->canvas;
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
-    struct pathone *one = ap->one;
+    struct pathone *one = pie->one;
 
 #if 0
     if (pieview->update_trans) {
@@ -216,25 +237,25 @@ _pieview_select(struct PieView *pieview, struct AP *ap)
     nemotale_composite(tale, NULL);
     nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
-    pieview->selected = ap;
+    pieview->selected = pie;
     pieview->dirty = true;
 }
 
 static void
 _pieview_unselect(struct PieView *pieview)
 {
-    struct AP *ap = pieview->selected;
-    if (!ap) return;
+    struct Pie *pie = pieview->selected;
+    if (!pie) return;
 
-    struct Context *ctx = pieview->ctx;
+    struct Context *ctx = _pieview_get_data(pieview);
     struct nemocanvas *canvas = ctx->canvas;
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
-    struct pathone *one = ap->one;
+    struct pathone *one = pie->one;
 
     nemotale_handle_canvas_update_event(NULL, canvas, tale);
 
     nemotale_path_set_stroke_color(NTPATH_STYLE(one),
-            ap->r, ap->g, ap->b, 0.0);
+            pie->r, pie->g, pie->b, 0.0);
     nemotale_path_set_stroke_width(NTPATH_STYLE(one), 0.0f);
 
     nemotale_node_clear_path(ctx->node);
@@ -255,11 +276,11 @@ _pieview_update_end(struct taletransition *trans, void *ctx, void *data)
 {
     struct PieView *pieview = data;
     List *l, *ll;
-    struct AP *ap;
-    LIST_FOR_EACH_SAFE(pieview->aps_del, l, ll, ap) {
-        pieview->aps_del = list_data_remove(pieview->aps_del, ap);
-        nemotale_path_destroy_one(ap->one);
-        free(ap);
+    struct Pie *pie;
+    LIST_FOR_EACH_SAFE(pieview->pies_del, l, ll, pie) {
+        pieview->pies_del = list_data_remove(pieview->pies_del, pie);
+        nemotale_path_destroy_one(pie->one);
+        free(pie);
     }
     pieview->update_trans = NULL;
 }
@@ -269,51 +290,46 @@ _pieview_update(struct PieView *pieview)
 {
     if (!pieview->dirty) return;
 
-    struct Context *ctx = pieview->ctx;
+    struct Context *ctx = _pieview_get_data(pieview);
     struct nemocanvas *canvas = ctx->canvas;
     int pow;
 
     List *l;
-    struct AP *ap;
+    struct Pie *pie;
 
 
     pow = _pieview_get_power(pieview);
 
-    struct taletransition *trans, *trans_alpha;
+    struct taletransition *trans;
     trans = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_OUT_TYPE);
-    trans_alpha = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_OUT_TYPE);
 
     double start = 0;
-    LIST_FOR_EACH_REVERSE(pieview->aps, l, ap) {
-        double end = ((double)ap->power/pow) * M_PI * 2 + start;
+    LIST_FOR_EACH_REVERSE(pieview->pies, l, pie) {
+        double end = ((double)pie->power/pow) * M_PI * 2 + start;
 
         nemotale_transition_attach_dattr(trans,
-                NTPATH_CIRCLE_ATSTARTANGLE(ap->one), 1.0f, start);
+                NTPATH_CIRCLE_ATSTARTANGLE(pie->one), 1.0f, start);
         nemotale_transition_attach_dattr(trans,
-                NTPATH_CIRCLE_ATENDANGLE(ap->one), 1.0f, end);
-        nemotale_transition_attach_dattrs(trans_alpha,
-                NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ap->one)),
-                4, 1.0f, ap->r, ap->g, ap->b, 0.8f);
-        _transit_transform_path(trans, ap->one);
-
-        //nemotale_path_set_pie_circle(ap->one, start, 0);
+                NTPATH_CIRCLE_ATENDANGLE(pie->one), 1.0f, end);
+        nemotale_transition_attach_dattrs(trans,
+                NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
+                4, 1.0f, pie->r, pie->g, pie->b, 0.8f);
+        _transit_transform_path(trans, pie->one);
 
         start = end;
     }
 
     // Remove animation
-    LIST_FOR_EACH_REVERSE(pieview->aps_del, l, ap) {
+    LIST_FOR_EACH_REVERSE(pieview->pies_del, l, pie) {
         nemotale_transition_attach_dattrs(trans,
-                NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(ap->one)),
-                4, 1.0f, ap->r, ap->g, ap->b, 0.0f);
+                NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
+                4, 1.0f, pie->r, pie->g, pie->b, 0.0f);
         _transit_add_event_end(trans, _pieview_update_end, ctx, pieview);
     }
 
     _transit_damage_path(trans, ctx->node, ctx->group);
-    _transit_damage_path(trans_alpha, ctx->node, ctx->group);
     _transit_go(trans, canvas);
-    _transit_go(trans_alpha, canvas);
-    pieview->update_trans = trans_alpha;
+    pieview->update_trans = trans;
 }
 
 static void
@@ -369,8 +385,8 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                 !strcmp(NTPATH_ID(one), "loading")) {
                 nemocanvas_move(canvas, taps[0]->serial);
             } else {
-                struct AP *ap = nemotale_path_get_data(one);
-                _pieview_select(pieview, ap);
+                struct Pie *pie = nemotale_path_get_data(one);
+                _pieview_select(pieview, pie);
             }
         } else if (ntaps == 2) {
             nemocanvas_pick(canvas,
@@ -413,10 +429,10 @@ _timeout(struct nemotimer *timer, void *data)
     if (rand() % 3) {
         int pow = ((double)rand()/RAND_MAX) * 100;
         _pieview_add_ap(ctx->pieview, pow);
-    } else if (list_count(ctx->pieview->aps) > 0) {
-        int idx = rand() % list_count(ctx->pieview->aps);
-        struct AP *ap = list_idx_get_data(ctx->pieview->aps, idx);
-        if (ap) _pieview_del_ap(ctx->pieview, ap);
+    } else if (list_count(ctx->pieview->pies) > 0) {
+        int idx = rand() % list_count(ctx->pieview->pies);
+        struct Pie *pie = list_idx_get_data(ctx->pieview->pies, idx);
+        if (pie) _pieview_del_ap(ctx->pieview, pie);
     }
     _pieview_update(ctx->pieview);
 
@@ -440,9 +456,6 @@ int main()
     struct Context *ctx = calloc(sizeof(struct Context), 1);
     ctx->w = w;
     ctx->h = h;
-
-    ctx->pieview = calloc(sizeof(struct PieView), 1);
-    ctx->pieview->ctx = ctx;
 
     struct nemotool *tool;
     tool = nemotool_create();
@@ -488,6 +501,9 @@ int main()
     nemotale_path_set_fill_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 0.0f);
     nemotale_path_attach_one(group, one);
     ctx->one_bg = one;
+
+    ctx->pieview = _pieview_create();
+    _pieview_set_data(ctx->pieview, ctx);
 
     pie_group = nemotale_path_create_group();
     nemotale_path_attach_one(group, pie_group);

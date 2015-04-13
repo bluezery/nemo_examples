@@ -276,8 +276,8 @@ int main()
 
     nemotale_path_update_one(group);
     nemotale_node_render_path(node, group);
-    nemotale_composite(tale, NULL);
 
+    nemotale_composite(tale, NULL);
     nemocanvas_damage(canvas, 0, 0, 0, 0);
     nemocanvas_commit(canvas);
 
