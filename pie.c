@@ -5,6 +5,7 @@
 #include <nemotale.h>
 #include <talenode.h>
 #include <talepixman.h>
+#include <nemotimer.h>
 
 #include <math.h>
 #include <pathstyle.h>
@@ -17,7 +18,7 @@ struct Pie {
     int power;
     struct pathone *one;
     double start, end;
-    double r, g, b;
+    double r, g, b, a;
 };
 
 struct PieView {
@@ -36,16 +37,45 @@ struct PieView {
     struct taletransition *update_trans;
 };
 
-struct Context {
-    struct nemocanvas *canvas;
-    struct talenode *node;
+typedef struct _Cpu {
+    char *name;
+    int user;
+    int nice;
+    int system;
+    int idle;
+} Cpu;
 
-    struct pathone *group;
-    struct pathone *one_bg;
+typedef struct _CpuStat {
+    int cnt;
+    Cpu *cpus;
+} CpuStat;
 
-    int w, h;
+#define CPUVIEW_TIMEOUT 1000
+
+typedef struct _Context Context;
+typedef struct _CpuView CpuView;
+
+struct _CpuView {
+    Context *ctx;
+    CpuStat *prev, *cur;
+
+    int state;
+    int cnt;
 
     struct PieView *pieview;
+    struct pathone *txt;
+
+};
+
+struct _Context {
+    _Win *win;
+
+    struct talenode *node;
+    struct pathone *group;
+    struct pathone *bg;
+
+    int w, h;
+    CpuView *cpuview;
 };
 
 static void
@@ -70,19 +100,16 @@ _pieview_reloading(struct taletransition *trans, void *ctx, void *data)
 static void
 _pieview_loading(struct PieView *pieview)
 {
-    struct Context *ctx = _pieview_get_data(pieview);
-    struct nemocanvas *canvas = ctx->canvas;
+    Context *ctx = _pieview_get_data(pieview);
     struct taletransition *trans;
 
-    trans = _transit_create(canvas, 0, 1500, NEMOEASE_CUBIC_OUT_TYPE);
-    _transit_transform_path(trans, pieview->loading_one);
-    _transit_damage_path(trans, ctx->node, ctx->group);
-    _transit_add_event_end(trans, _pieview_reloading, ctx, pieview);
-    _transit_go(trans, canvas);
+    trans = _win_trans_create(ctx->win, 0, 1200, NEMOEASE_CUBIC_OUT_TYPE);
 
-    nemotale_path_transform_enable(pieview->loading_one);
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(pieview->loading_one));
+    _win_trans_damage(ctx->win, trans, ctx->node, ctx->group);
+    _win_trans_transform(ctx->win, trans, pieview->loading_one);
+    _win_trans_render(ctx->win, trans, ctx->node, ctx->group);
+
+    _win_trans_add_event_end(ctx->win, trans, _pieview_reloading, ctx, pieview);
 
     nemotale_transition_attach_dattr(trans,
             NTPATH_CIRCLE_ATINNERRADIUS(pieview->loading_one), 0.5f, 10);
@@ -107,13 +134,19 @@ _pieview_loading(struct PieView *pieview)
             NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pieview->loading_one)),
             4, 1.0f, 0.0f, 1.0f, 0.0f, 0.5f);
     pieview->loading_trans = trans;
+
+    _win_trans_do(ctx->win, trans);
 }
 
 static struct PieView *
-_pieview_create()
+_pieview_create(struct pathone *group, int r, int ir)
 {
     struct PieView *pieview;
     pieview = calloc(sizeof(struct PieView), 1);
+    pieview->r = r;
+    pieview->ir = ir;
+    pieview->group = nemotale_path_create_group();
+    nemotale_path_attach_one(group, pieview->group);
     return pieview;
 }
 
@@ -157,6 +190,31 @@ _pieview_get_power(struct PieView *pieview)
         pow += pie->power;
     }
     return pow;
+}
+
+static struct Pie *
+_pieview_get_ap(struct PieView *pieview, int idx)
+{
+    return list_idx_get_data(pieview->pies, idx);
+}
+
+static void
+_pieview_change_power(struct PieView *pieview, int idx, int pow)
+{
+    struct Pie *pie = list_idx_get_data(pieview->pies, idx);
+    if (!pie) return;
+    pie->power = pow;
+}
+
+static void
+_pieview_set_color(struct PieView *pieview, int idx, double r, double g, double b, double a)
+{
+    struct Pie *pie = list_idx_get_data(pieview->pies, idx);
+    if (!pie) return;
+    pie->r = r;
+    pie->g = g;
+    pie->b = b;
+    pie->a = a;
 }
 
 static struct Pie *
@@ -207,9 +265,9 @@ _pieview_del_ap(struct PieView *pieview, struct Pie *pie)
 static void
 _pieview_select(struct PieView *pieview, struct Pie *pie)
 {
-    struct Context *ctx = _pieview_get_data(pieview);
-    struct nemocanvas *canvas = ctx->canvas;
-    struct nemotale *tale = nemocanvas_get_userdata(canvas);
+    Context *ctx = _pieview_get_data(pieview);
+    struct nemocanvas *canvas = _win_get_canvas(ctx->win);
+    struct nemotale *tale = _win_get_tale(ctx->win);
     struct pathone *one = pie->one;
 
 #if 0
@@ -225,7 +283,7 @@ _pieview_select(struct PieView *pieview, struct Pie *pie)
     nemotale_path_detach_one(pieview->group, one);
     nemotale_path_attach_one(pieview->group, one);
     nemotale_path_set_stroke_color(NTPATH_STYLE(one),
-            1, 1, 1, 1.0);
+            1, 1, 1, 0.5);
     nemotale_path_set_stroke_width(NTPATH_STYLE(one), 5.0f);
 
     nemotale_node_clear_path(ctx->node);
@@ -247,8 +305,8 @@ _pieview_unselect(struct PieView *pieview)
     struct Pie *pie = pieview->selected;
     if (!pie) return;
 
-    struct Context *ctx = _pieview_get_data(pieview);
-    struct nemocanvas *canvas = ctx->canvas;
+    Context *ctx = _pieview_get_data(pieview);
+    struct nemocanvas *canvas = _win_get_canvas(ctx->win);
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
     struct pathone *one = pie->one;
 
@@ -290,8 +348,7 @@ _pieview_update(struct PieView *pieview)
 {
     if (!pieview->dirty) return;
 
-    struct Context *ctx = _pieview_get_data(pieview);
-    struct nemocanvas *canvas = ctx->canvas;
+    Context *ctx = _pieview_get_data(pieview);
     int pow;
 
     List *l;
@@ -301,7 +358,9 @@ _pieview_update(struct PieView *pieview)
     pow = _pieview_get_power(pieview);
 
     struct taletransition *trans;
-    trans = _transit_create(canvas, 0, 1000, NEMOEASE_CUBIC_OUT_TYPE);
+    trans = _win_trans_create(ctx->win, 0, 1000, NEMOEASE_CUBIC_OUT_TYPE);
+
+    _win_trans_damage(ctx->win, trans, ctx->node, ctx->group);
 
     double start = 0;
     LIST_FOR_EACH_REVERSE(pieview->pies, l, pie) {
@@ -313,11 +372,12 @@ _pieview_update(struct PieView *pieview)
                 NTPATH_CIRCLE_ATENDANGLE(pie->one), 1.0f, end);
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
-                4, 1.0f, pie->r, pie->g, pie->b, 0.8f);
-        _transit_transform_path(trans, pie->one);
+                4, 1.0f, pie->r, pie->g, pie->b, pie->a);
+        _win_trans_transform(ctx->win, trans, pie->one);
 
         start = end;
     }
+    _win_trans_render(ctx->win, trans, ctx->node, ctx->group);
 
     // Remove animation
     LIST_FOR_EACH_REVERSE(pieview->pies_del, l, pie) {
@@ -326,97 +386,21 @@ _pieview_update(struct PieView *pieview)
                 4, 1.0f, pie->r, pie->g, pie->b, 0.0f);
         _transit_add_event_end(trans, _pieview_update_end, ctx, pieview);
     }
+    _win_trans_do(ctx->win, trans);
 
-    _transit_damage_path(trans, ctx->node, ctx->group);
-    _transit_go(trans, canvas);
     pieview->update_trans = trans;
 }
 
-static void
-_canvas_resize(struct nemocanvas *canvas, int32_t w, int32_t h)
-{
-    struct nemotale *tale = nemocanvas_get_userdata(canvas);
-    struct Context *ctx = nemotale_get_userdata(tale);
-    struct talenode *node = ctx->node;
-
-    nemocanvas_set_size(canvas, w, h);
-    nemotale_handle_canvas_update_event(NULL, canvas, tale);
-
-    nemotale_node_resize_pixman(node, w, h);
-
-    double sx = (double)w/ctx->w;
-    double sy = (double)h/ctx->h;
-    cairo_matrix_t matrix;
-    cairo_matrix_init_scale(&matrix, sx, sy);
-
-    nemotale_node_clear_path(node);
-    nemotale_node_damage_all(node);
-
-    nemotale_path_set_parent_transform(ctx->group, &matrix);
-    nemotale_path_update_one(ctx->group);
-    nemotale_node_render_path(node, ctx->group);
-
-    nemotale_composite(tale, NULL);
-    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
-}
-
-static void
-_tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
-{
-    struct Context *ctx = nemotale_get_userdata(tale);
-    struct nemocanvas *canvas = ctx->canvas;
-    struct nemotool *tool = nemocanvas_get_tool(canvas);
-    struct PieView *pieview = ctx->pieview;
-
-    struct taletap *taps[16];
-    int ntaps;
-    struct taletap *tap;
-
-    ntaps = nemotale_get_node_taps(tale, node, taps, type);
-    tap = nemotale_get_tap(tale, event->device, type);
-
-    if (type & NEMOTALE_DOWN_EVENT) {
-        tap->item = nemotale_path_pick_one(
-                pieview->group, event->x, event->y);
-        if (ntaps == 1) {
-            struct pathone *one = tap->item;
-            if (!one || !NTPATH_ID(one) ||
-                !strcmp(NTPATH_ID(one), "bg") ||
-                !strcmp(NTPATH_ID(one), "loading")) {
-                nemocanvas_move(canvas, taps[0]->serial);
-            } else {
-                struct Pie *pie = nemotale_path_get_data(one);
-                _pieview_select(pieview, pie);
-            }
-        } else if (ntaps == 2) {
-            nemocanvas_pick(canvas,
-                    taps[0]->serial,
-                    taps[1]->serial,
-                    (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
-        } else if (ntaps == 3) {
-            if (nemotale_is_single_click(tale, event, type)) {
-                nemotool_exit(tool);
-            }
-        }
-    } else {
-        _pieview_unselect(pieview);
-        if (nemotale_is_single_click(tale, event, type)) {
-            if (ntaps == 1) {
-                struct pathone *one = tap->item;
-                if (one) LOG("%s", NTPATH_ID(one));
-            }
-        }
-    }
-}
-
+#if 0
 static void
 _timeout(struct nemotimer *timer, void *data)
 {
-    struct Context *ctx = data;
-    struct nemocanvas *canvas = ctx->canvas;
+    Context *ctx = data;
+    struct nemocanvas *canvas = _win_get_canvas(ctx->win);
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
     struct PieView *pieview = ctx->pieview;
 
+    nemotale_handle_canvas_update_event(NULL, canvas, tale);
     if (pieview->loading_trans) {
         nemotale_transition_destroy(pieview->loading_trans);
         pieview->loading_trans = NULL;
@@ -434,26 +418,224 @@ _timeout(struct nemotimer *timer, void *data)
         struct Pie *pie = list_idx_get_data(ctx->pieview->pies, idx);
         if (pie) _pieview_del_ap(ctx->pieview, pie);
     }
+
     _pieview_update(ctx->pieview);
-
-    nemotale_handle_canvas_update_event(NULL, canvas, tale);
-
-    nemotale_node_damage_all(ctx->node);
-
-    nemotale_path_update_one(pieview->group);
-    nemotale_node_render_path(ctx->node, ctx->group);
-
-    nemotale_composite(tale, NULL);
-    nemotale_handle_canvas_flush_event(NULL, canvas, NULL);
 
     nemotimer_set_timeout(timer, 2000);
 }
+#endif
 
+static void
+_cpustat_free(CpuStat *stat)
+{
+    free(stat->cpus);
+    free(stat);
+}
+
+static CpuStat *
+_cpustat_dup(CpuStat *stat)
+{
+    CpuStat *new;
+    new = calloc(sizeof(CpuStat), 1);
+    new->cnt = stat->cnt;
+
+    int i = 0;
+    new->cpus = calloc(sizeof(Cpu), stat->cnt);
+    for ( i = 0 ; i < stat->cnt ; i++) {
+        new->cpus[i] = stat->cpus[i];
+        if (stat->cpus[i].name)
+            new->cpus[i].name = strdup(stat->cpus[i].name);
+    }
+    return new;
+}
+
+static CpuStat *
+_cpustat_get()
+{
+    int line_len;
+    char **lines = _file_load("/proc/stat", &line_len);
+    int i = 0;
+
+    CpuStat *stat = calloc(sizeof(CpuStat), 1);
+    for (i = 0 ; i < line_len ; i++) {
+        if (!strncmp(lines[i], "cpu", 3)) {
+            stat->cnt++;
+            stat->cpus = realloc(stat->cpus, sizeof(Cpu) * stat->cnt);
+
+            char *token;
+            token = strtok(lines[i], " ");
+            stat->cpus[stat->cnt - 1].name = strdup(token);
+            token = strtok(NULL, " ");
+            stat->cpus[stat->cnt - 1].user = atoi(token);
+            token = strtok(NULL, " ");
+            stat->cpus[stat->cnt - 1].nice = atoi(token);
+            token = strtok(NULL, " ");
+            stat->cpus[stat->cnt - 1].system = atoi(token);
+            token = strtok(NULL, " ");
+            stat->cpus[stat->cnt - 1].idle = atoi(token);
+        }
+        free(lines[i]);
+    }
+    free(lines);
+    return stat;
+}
+
+static void
+_cpuview_change(CpuView *cpuview)
+{
+    cpuview->state++;
+    if (cpuview->state > cpuview->cnt)
+        cpuview->state = 0;
+    if (cpuview->state == cpuview->cnt)
+        nemotale_path_load_text(cpuview->txt, "Total", 5);
+    else
+        nemotale_path_load_text(cpuview->txt,
+                cpuview->cur->cpus[cpuview->state].name,
+                strlen(cpuview->cur->cpus[cpuview->state].name));
+}
+
+static void
+_cpuview_update(CpuView *cpuview)
+{
+    struct PieView *pieview = cpuview->pieview;
+    CpuStat *cur = cpuview->cur;
+    CpuStat *prev = cpuview->prev;
+
+    int i = 0;
+    int user_diff_t = 0, nice_diff_t = 0, system_diff_t = 0;
+    int idle_diff_t = 0, tot_diff_t = 0;
+    for (i = 0 ; i < prev->cnt ; i++) {
+        int user_diff, nice_diff, system_diff, idle_diff, tot_diff;
+        user_diff = cur->cpus[i].user - prev->cpus[i].user;
+        nice_diff = cur->cpus[i].nice - prev->cpus[i].nice;
+        system_diff = cur->cpus[i].system - prev->cpus[i].system;
+        idle_diff = cur->cpus[i].idle - prev->cpus[i].idle;
+        tot_diff = user_diff + nice_diff + system_diff + idle_diff;
+        if (tot_diff == 0) continue;
+        user_diff_t += user_diff;
+        nice_diff_t += nice_diff;
+        system_diff_t += system_diff;
+        idle_diff_t += idle_diff;
+        tot_diff_t += tot_diff;
+        if (cpuview->state == i) {
+            ERR("%d", i);
+            _pieview_change_power(pieview, 0, user_diff);
+            _pieview_change_power(pieview, 1, nice_diff);
+            _pieview_change_power(pieview, 2, system_diff);
+            _pieview_change_power(pieview, 3, idle_diff);
+        }
+    }
+    if (cpuview->state >= i) {
+        //ERR("");
+        _pieview_change_power(pieview, 0, user_diff_t);
+        _pieview_change_power(pieview, 1, nice_diff_t);
+        _pieview_change_power(pieview, 2, system_diff_t);
+        _pieview_change_power(pieview, 3, idle_diff_t);
+    }
+    _pieview_update(pieview);
+}
+
+static void
+_cpuview_init(CpuView *cpuview)
+{
+    struct PieView *pieview = cpuview->pieview;
+    CpuStat *cur = _cpustat_get();
+    cpuview->cur = cur;
+
+    int i = 0;
+    int user_t = 0, nice_t = 0, system_t = 0;
+    int idle_t = 0, tot_t = 0;
+    for (i = 0 ; i < cur->cnt ; i++) {
+        int tot;
+        tot = cur->cpus[i].user + cur->cpus[i].nice + cur->cpus[i].system + cur->cpus[i].idle;
+        if (tot == 0) continue;
+        user_t += cur->cpus[i].user;
+        nice_t += cur->cpus[i].nice;
+        system_t += cur->cpus[i].system;
+        idle_t += cur->cpus[i].idle;
+        tot_t += tot;
+    }
+    cpuview->cnt = cur->cnt;
+    cpuview->state = -1;
+
+    _pieview_add_ap(pieview, user_t);
+    _pieview_set_color(pieview, 0, 1, 0, 0, 0.8);
+    _pieview_add_ap(pieview, nice_t);
+    _pieview_set_color(pieview, 1, 0, 1, 0, 0.8);
+    _pieview_add_ap(pieview, system_t);
+    _pieview_set_color(pieview, 2, 0, 0, 1, 0.8);
+    _pieview_add_ap(pieview, idle_t);
+    _pieview_set_color(pieview, 3, 1, 1, 1, 0.2);
+    _pieview_update(pieview);
+}
+
+static void
+_cpuview_timeout(struct nemotimer *timer, void *data)
+{
+    CpuView *cpuview = data;
+
+    if (cpuview->prev) _cpustat_free(cpuview->prev);
+    cpuview->prev = _cpustat_dup(cpuview->cur);
+
+    _cpustat_free(cpuview->cur);
+    cpuview->cur = _cpustat_get();
+
+    _cpuview_update(cpuview);
+
+    nemotimer_set_callback(timer, _cpuview_timeout);
+    nemotimer_set_userdata(timer, data);
+    nemotimer_set_timeout(timer, CPUVIEW_TIMEOUT);
+}
+
+static void
+_tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct taleevent *event)
+{
+    Context *ctx = nemotale_get_userdata(tale);
+    struct nemocanvas *canvas = _win_get_canvas(ctx->win);
+    struct nemotool *tool = nemocanvas_get_tool(canvas);
+    CpuView *cpuview = ctx->cpuview;
+    struct PieView *pieview = cpuview->pieview;
+
+    struct taletap *taps[16];
+    int ntaps;
+    struct taletap *tap;
+
+    ntaps = nemotale_get_node_taps(tale, node, taps, type);
+    tap = nemotale_get_tap(tale, event->device, type);
+
+    if (type & NEMOTALE_DOWN_EVENT) {
+        tap->item = nemotale_path_pick_one(
+                ctx->group, event->x, event->y);
+        if (ntaps == 1) {
+            nemocanvas_move(canvas, taps[0]->serial);
+        } else if (ntaps == 2) {
+            nemocanvas_pick(canvas,
+                    taps[0]->serial,
+                    taps[1]->serial,
+                    (1 << NEMO_SURFACE_PICK_TYPE_SCALE));
+        } else if (ntaps == 3) {
+            if (nemotale_is_single_click(tale, event, type)) {
+                nemotool_exit(tool);
+            }
+        }
+    } else {
+        if (nemotale_is_single_click(tale, event, type)) {
+            if (ntaps == 1) {
+                struct pathone *one = tap->item;
+                if (one && NTPATH_ID(one)) {
+                    if (!strcmp(NTPATH_ID(one), "bg") ||
+                        !strcmp(NTPATH_ID(one), "text"))
+                        _cpuview_change(cpuview);
+                }
+            }
+        }
+    }
+}
 
 int main()
 {
     int w = 320, h = 320;
-    struct Context *ctx = calloc(sizeof(struct Context), 1);
+    Context *ctx = calloc(sizeof(Context), 1);
     ctx->w = w;
     ctx->h = h;
 
@@ -461,26 +643,10 @@ int main()
     tool = nemotool_create();
     nemotool_connect_wayland(tool, NULL);
 
-    struct nemocanvas *canvas;
-    canvas = nemocanvas_create(tool);
-    nemocanvas_set_size(canvas, w, h);
-    nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
-    nemocanvas_set_anchor(canvas, -0.5f, -0.5f);
-    nemocanvas_set_dispatch_resize(canvas, _canvas_resize);
-
-    nemocanvas_flip(canvas);
-    nemocanvas_clear(canvas);
-    ctx->canvas = canvas;
-
-    struct nemotale *tale;
-    tale = nemotale_create_pixman();
-    nemotale_attach_pixman(tale,
-            nemocanvas_get_data(canvas),
-            nemocanvas_get_width(canvas),
-            nemocanvas_get_height(canvas),
-            nemocanvas_get_stride(canvas));
-    nemotale_attach_canvas(tale, canvas, _tale_event);
-
+    _Win *win = _win_create(tool, WIN_TYPE_PIXMAN, w, h, _tale_event);
+    ctx->win = win;
+    struct nemotale *tale = _win_get_tale(win);
+    nemocanvas_set_anchor(_win_get_canvas(win), -0.5f, -0.5f);
     nemotale_set_userdata(tale, ctx);
 
     struct talenode *node;
@@ -489,28 +655,57 @@ int main()
     nemotale_attach_node(tale, node);
     ctx->node = node;
 
-    struct pathone *group, *pie_group;
+    struct pathone *group;
     group = nemotale_path_create_group();
     ctx->group = group;
 
     struct pathone *one;
+
+    // Background
     one = nemotale_path_create_rect(w, h);
     nemotale_path_set_id(one, "bg");
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_operator(one, CAIRO_OPERATOR_SOURCE);
-    nemotale_path_set_fill_color(NTPATH_STYLE(one), 1.0f, 1.0f, 1.0f, 0.0f);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one),
+            0.0f, 0.0f, 0.0f, 0.0f);
     nemotale_path_attach_one(group, one);
-    ctx->one_bg = one;
+    ctx->bg = one;
 
-    ctx->pieview = _pieview_create();
-    _pieview_set_data(ctx->pieview, ctx);
+    // CpuView
+    CpuView *cpuview = calloc(sizeof(CpuView), 1);
+    ctx->cpuview = cpuview;
 
-    pie_group = nemotale_path_create_group();
-    nemotale_path_attach_one(group, pie_group);
-    ctx->pieview->group = pie_group;
+    cpuview->ctx = ctx;
 
-    ctx->pieview->r = (w - 20)/2;
-    ctx->pieview->ir = 80;
+    // CpuView: PieView
+    struct PieView *pieview;
+    pieview = _pieview_create(group, (w-20)/2, 80);
+    _pieview_set_data(pieview, ctx);
+    cpuview->pieview = pieview;
+
+    // CpuView: Pieview Text
+    one = nemotale_path_create_text();
+    nemotale_path_set_id(one, "text");
+    nemotale_path_attach_style(one, NULL);
+    nemotale_path_set_font_family(NTPATH_STYLE(one), "Sans");
+    nemotale_path_set_font_size(NTPATH_STYLE(one), 50);
+    nemotale_path_set_font_weight(NTPATH_STYLE(one),
+            CAIRO_FONT_WEIGHT_BOLD);
+    nemotale_path_set_fill_color(NTPATH_STYLE(one), 0, 1, 1, 1);
+    nemotale_path_set_anchor(one, -0.5f, -0.5f);
+    nemotale_path_load_text(one, "Total", strlen("Total"));
+    nemotale_path_translate(one, w/2, h/2);
+    nemotale_path_attach_one(group, one);
+    cpuview->txt = one;
+
+    // CpuView init
+    _cpuview_init(cpuview);
+
+    // Cpuview Update timer
+    struct nemotimer *timer = nemotimer_create(tool);
+    _cpuview_timeout(timer, cpuview);
+
+#if 0 // Pieview loading animation
     one = nemotale_path_create_circle(ctx->pieview->r);
     nemotale_path_set_id(one, "loading");
     nemotale_path_attach_style(one, NULL);
@@ -521,33 +716,19 @@ int main()
     nemotale_path_attach_one(pie_group, one);
     ctx->pieview->loading_one = one;
     _pieview_loading(ctx->pieview);
-
-#if 1
-    struct nemotimer *timer = nemotimer_create(tool);
-    nemotimer_set_timeout(timer, 3000);
-    nemotimer_set_callback(timer, _timeout);
-    nemotimer_set_userdata(timer, ctx);
 #endif
-
-    nemotale_path_update_one(group);
-    nemotale_node_render_path(node, group);
-    nemotale_composite(tale, NULL);
-    nemocanvas_damage(canvas, 0, 0, 0, 0);
-    nemocanvas_commit(canvas);
-
     nemotool_run(tool);
 
-    _pieview_destroy(ctx->pieview);
-    free(ctx);
+    nemotimer_destroy(timer);
+    _pieview_destroy(cpuview->pieview);
 
     nemotale_path_destroy_one(group);
     nemotale_node_destroy(node);
 
-    nemotale_destroy(tale);
-    nemocanvas_destroy(canvas);
-
+    _win_destroy(win);
     nemotool_disconnect_wayland(tool);
     nemotool_destroy(tool);
+    free(ctx);
 
     return 0;
 }

@@ -24,13 +24,16 @@ LINK_DIRECTORIES(${PKGS_LIBRARY_DIRS})
 ADD_LIBRARY(helper STATIC
     util.c talehelper.c cairo_view.c view.c text.c
     )
-TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m)
+TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
 ADD_EXECUTABLE(nemotest nemotest.c)
-TARGET_LINK_LIBRARIES(nemotest helper "${PKGS_LIBRARIES}" m)
+TARGET_LINK_LIBRARIES(nemotest helper "${PKGS_LIBRARIES}" m rt)
 
-#ADD_EXECUTABLE(pie pie.c)
-#TARGET_LINK_LIBRARIES(pie helper "${PKGS_LIBRARIES}" m)
+#ADD_EXECUTABLE(future future.c)
+#TARGET_LINK_LIBRARIES(future helper "${PKGS_LIBRARIES}" m rt)
 
-ADD_EXECUTABLE(table table.c)
-TARGET_LINK_LIBRARIES(table helper "${PKGS_LIBRARIES}" m)
+ADD_EXECUTABLE(pie pie.c)
+TARGET_LINK_LIBRARIES(pie helper "${PKGS_LIBRARIES}" m rt)
+
+#ADD_EXECUTABLE(table table.c)
+#TARGET_LINK_LIBRARIES(table helper "${PKGS_LIBRARIES}" m rt)

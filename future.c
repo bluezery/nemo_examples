@@ -82,7 +82,7 @@ _fade_begin(struct Context *ctx)
 
     trans3 = _transit_create(canvas, 2000, 500, NEMOEASE_CUBIC_OUT_TYPE);
     _transit_damage_path(trans3, ctx->node, ctx->group);
-    _transit_go(trans3, canvas);
+    _eransit_go(trans3, canvas);
 
     // 1
     nemotale_transition_attach_dattrs(trans1,

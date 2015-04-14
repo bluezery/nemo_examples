@@ -19,7 +19,7 @@ _transit_create(struct nemocanvas *canvas, int delay, int duration, uint32_t typ
     struct nemotale *tale =nemocanvas_get_userdata(canvas);
     struct taletransition *trans;
     trans = nemotale_transition_create(delay, duration);
-    nemotale_transition_attach_timing(trans, 1.0, type);
+    nemotale_transition_attach_timing(trans, 1.0f, type);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_handle_canvas_update_event, canvas, tale);
@@ -49,16 +49,10 @@ _transit_damage_path(struct taletransition *trans, struct talenode *node, struct
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
             nemotale_node_handle_path_damage_event, node, one);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_damage_event, node, one);
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
-            nemotale_node_handle_path_clip_and_render_event, node, one);
 }
 
 static inline void
-_transit_transform_path(struct taletransition *trans, struct pathone *one)
+_transit_transform_path(struct taletransition *trans, struct talenode *node, struct pathone *one)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
@@ -66,6 +60,12 @@ _transit_transform_path(struct taletransition *trans, struct pathone *one)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_update_event, NULL, one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_damage_event, node, one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_clip_and_render_event, node, one);
 }
 
 static inline void
@@ -93,11 +93,12 @@ typedef enum
     WIN_TYPE_EGL
 } _WinType;
 
-typedef struct _MyWin {
+typedef struct _Win {
     _WinType type;
     int w, h;
     struct nemotale *tale;
     struct nemotool *tool;
+    void *userdata;
 
     // Pixman
     struct nemocanvas *canvas;
@@ -209,6 +210,88 @@ _win_render(_Win *win)
     if (win->type == WIN_TYPE_PIXMAN) {
         nemotale_handle_canvas_flush_event(NULL, win->canvas, NULL);
     }
+}
+
+static inline void
+_win_set_userdata(_Win *win, void *userdata)
+{
+    win->userdata = userdata;
+}
+
+static inline void *
+_win_get_userdata(_Win *win)
+{
+    return win->userdata;
+}
+
+static inline struct taletransition *
+_win_trans_create(_Win *win, int delay, int duration, uint32_t type)
+{
+    struct nemocanvas *canvas = _win_get_canvas(win);
+    struct nemotale *tale = _win_get_tale(win);
+    struct taletransition *trans;
+    trans = nemotale_transition_create(delay, duration);
+    nemotale_transition_attach_timing(trans, 1.0f, type);
+    if (win->type == WIN_TYPE_PIXMAN) {
+        nemotale_transition_attach_event(trans,
+                NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+                nemotale_handle_canvas_update_event, canvas, tale);
+    }
+
+    return trans;
+}
+
+static inline void
+_win_trans_damage(_Win *win, struct taletransition *trans, struct talenode *node, struct pathone *one)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_PREUPDATE,
+            nemotale_node_handle_path_damage_event, node, one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_damage_event, node, one);
+}
+
+
+static inline void
+_win_trans_transform(_Win *win, struct taletransition *trans, struct pathone *one)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_transform_event, NULL, one);
+    nemotale_path_transform_enable(one);
+    nemotale_transition_attach_signal(trans,
+            NTPATH_DESTROY_SIGNAL(one));
+}
+
+static inline void
+_win_trans_render(_Win *win, struct taletransition *trans, struct talenode *node, struct pathone *one)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_path_update_event, NULL, one);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_node_handle_path_clip_and_render_event, node, one);
+}
+
+static inline void
+_win_trans_do(_Win *win, struct taletransition *trans)
+{
+    struct nemotale *tale = _win_get_tale(win);
+    struct nemocanvas *canvas = _win_get_canvas(win);
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
+            nemotale_handle_composite_event, tale, NULL);
+    nemotale_dispatch_canvas_transition(canvas, trans);
+}
+
+static inline void
+_win_trans_add_event_end(_Win *win, struct taletransition *trans, nemotale_transition_dispatch_t callback, void *ctx, void *data)
+{
+    nemotale_transition_attach_event(trans,
+            NEMOTALE_TRANSITION_EVENT_END,
+            callback, ctx, data);
 }
 
 #endif
