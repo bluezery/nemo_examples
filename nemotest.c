@@ -16,6 +16,7 @@
 #include <pathstyle.h>
 
 #include "util.h"
+#include "talehelper.h"
 
 #define EGL 0
 
@@ -23,7 +24,7 @@ struct Context {
 #if EGL
     struct eglcanvas *canvas;
 #else
-    struct nemocavas *canvas;
+    struct nemocanvas *canvas;
 #endif
     struct talenode *node;
     struct pathone *group;
@@ -46,8 +47,7 @@ _canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
 	nemotale_node_resize_pixman(node, width, height);
 #else
     nemocanvas_set_size(ctx->canvas, width, height);
-    nemocanvas_flip(canvas);
-    nemocanvas_clear(canvas);
+    nemocanvas_buffer(canvas);
     nemotale_detach_pixman(tale);
     nemotale_attach_pixman(tale,
             nemocanvas_get_data(canvas),
@@ -56,7 +56,6 @@ _canvas_resize(struct nemocanvas *canvas, int32_t width, int32_t height)
             nemocanvas_get_stride(canvas));
     nemotale_node_resize_pixman(node, width, height);
 #endif
-
 
 	cairo_matrix_init_scale(&matrix,
             (double)width / ctx->width,
@@ -144,8 +143,7 @@ int main()
     nemocanvas_set_dispatch_resize(canvas, _canvas_resize);
     //nemocanvas_set_layer(canvas, NEMO_SURFACE_LAYER_TYPE_OVERLAY);
     //nemocanvas_set_pivot(canvas, width/2., height/2.);
-    nemocanvas_flip(canvas);
-    nemocanvas_clear(canvas);
+    nemocanvas_buffer(canvas);
     ctx->canvas = canvas;
 #endif
 

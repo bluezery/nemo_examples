@@ -3,6 +3,7 @@
 
 #include <cairo.h>
 #include <stdbool.h>   // bool
+#include <stdlib.h>     // calloc
 #include "log.h"
 
 // String

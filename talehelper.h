@@ -16,11 +16,6 @@
 #include <pathshape.h>
 #include <pathstyle.h>
 
-extern void nemotale_handle_canvas_update_event(struct taletransition *trans, void *context, void *data);
-extern void nemotale_handle_canvas_flush_event(struct taletransition *trans, void *context, void *data);
-
-extern void nemotale_dispatch_canvas_transition(struct nemocanvas *canvas, struct taletransition *trans);
-
 extern void nemotale_attach_canvas(struct nemotale *tale, struct nemocanvas *canvas, nemotale_dispatch_event_t dispatch);
 
 #endif
