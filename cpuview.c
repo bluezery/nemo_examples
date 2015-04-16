@@ -134,7 +134,6 @@ _cpuview_update_end(struct taletransition *trans, struct nemoobject *obj)
 {
     CpuView *cv = nemoobject_igetp(obj, 0);
     cv->trans = NULL;
-    if (cv->state_changed) _cpuview_update(cv);
 }
 
 static void
@@ -151,10 +150,11 @@ _cpuview_update(CpuView *cv)
 
     CpuStat *cur = cv->cur;
     CpuStat *prev = cv->prev;
+    if (!cur || !prev) return;
 
     Context *ctx = cv->ctx;
     struct taletransition *trans;
-    trans = nemotale_transition_create(0, 1000);
+    trans = nemotale_transition_create(0, 500);
     nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
     _win_trans_damage(ctx->win, trans, ctx->node, ctx->group);
 
@@ -267,7 +267,6 @@ _cpuview_update(CpuView *cv)
                 _pieview_resize(pv, radius, inradius);
                 delay = offset * (cur->cnt - i - 1);
                 to = delay + offset;
-                ERR("%lf %lf", delay, to);
             }
         }
 
@@ -289,8 +288,13 @@ _cpuview_change(CpuView *cv)
     cv->state++;
     if (cv->state >= 2)
         cv->state = 0;
-
     cv->state_changed = true;
+
+    if (cv->trans) {
+        nemotale_transition_revoke(cv->trans);
+        cv->trans = NULL;
+        nemotimer_set_timeout(cv->timer, 16);
+    }
 }
 
 static void
@@ -393,8 +397,6 @@ _cpuview_timeout(struct nemotimer *timer, void *data)
 
     _cpuview_update(cv);
 
-    nemotimer_set_callback(timer, _cpuview_timeout);
-    nemotimer_set_userdata(timer, data);
     nemotimer_set_timeout(timer, CPUVIEW_TIMEOUT);
 }
 
@@ -550,7 +552,9 @@ int main(){
 
     // Cpuview Update timer
     struct nemotimer *timer = nemotimer_create(tool);
-    _cpuview_timeout(timer, cv);
+    nemotimer_set_callback(timer, _cpuview_timeout);
+    nemotimer_set_userdata(timer, cv);
+    nemotimer_set_timeout(timer, CPUVIEW_TIMEOUT);
     cv->timer = timer;
 
 	nemotale_path_update_one(group);
