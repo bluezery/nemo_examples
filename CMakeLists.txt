@@ -9,7 +9,7 @@ SET(nemo_example_VERSION_MINOR 1)
 #FIXME: For including external headers
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}")
 
-PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng12 harfbuzz freetype2 fontconfig nemotale nemotool)
+PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool)
 
 FOREACH(i ${PKGS_CFLAGS})
     SET(CFLAGS "${CFLAGS} ${i}")
