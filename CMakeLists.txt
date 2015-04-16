@@ -7,7 +7,7 @@ SET(nemo_example_VERSION_MAJOR 0)
 SET(nemo_example_VERSION_MINOR 1)
 
 #FIXME: For including external headers
-INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}")
+INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/temp/")
 
 PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool)
 
@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(${PKGS_INCLUDE_DIRS})
 LINK_DIRECTORIES(${PKGS_LIBRARY_DIRS})
 
 ADD_LIBRARY(helper STATIC
-    util.c talehelper.c cairo_view.c view.c text.c pieview.c
+    util.c temp/talehelper.c cairo_view.c view.c text.c pieview.c
     )
 TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
