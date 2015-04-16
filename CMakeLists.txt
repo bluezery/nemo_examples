@@ -6,7 +6,7 @@ PROJECT(nemo_example)
 SET(nemo_example_VERSION_MAJOR 0)
 SET(nemo_example_VERSION_MINOR 1)
 
-INCLUDE_DIRECTORIES("${PROJECT_BINARY_DIR}")
+INCLUDE_DIRECTORIES("${PROJECT_SOURCE_DIR}")
 
 PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng12 harfbuzz freetype2 fontconfig nemotale nemotool)
 

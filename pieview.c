@@ -23,7 +23,8 @@ struct _Pie {
 
 struct _PieView {
     int r, ir;
-    bool size_changed;
+    bool resized;
+    bool colored;
     bool dirty;
     void *data;
 
@@ -96,6 +97,9 @@ _pieview_create(struct pathone *group, int r, int ir)
     pieview->ir = ir;
     pieview->group = nemotale_path_create_group();
     nemotale_path_attach_one(group, pieview->group);
+    pieview->resized = true;
+    pieview->colored = true;
+    pieview->dirty = true;
     return pieview;
 }
 
@@ -105,7 +109,7 @@ _pieview_resize(PieView *pieview, int r, int ir)
     pieview->r = r;
     pieview->ir = ir;
     pieview->dirty = true;
-    pieview->size_changed = true;
+    pieview->resized = true;
 }
 
 void
@@ -169,6 +173,7 @@ _pieview_move(PieView *pieview, int x, int y)
     LIST_FOR_EACH(pieview->pies, l, pie) {
         nemotale_path_translate(pie->one, x, y);
     }
+    pieview->dirty = true;
 }
 
 void
@@ -189,6 +194,7 @@ _pieview_set_color(PieView *pieview, int idx, double r, double g, double b, doub
     pie->g = g;
     pie->b = b;
     pie->a = a;
+    pieview->colored = true;
     pieview->dirty = true;
 }
 
@@ -217,9 +223,9 @@ _pieview_add_ap(PieView *pieview, int power)
     nemotale_path_set_donut_circle(one, pieview->ir);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),
             pie->r, pie->g, pie->b, 0.0);
-    nemotale_path_translate(one, 10, 10);
     nemotale_path_attach_one(pieview->group, one);
     nemotale_path_set_pie_circle(one, endangle, endangle);
+    nemotale_path_set_anchor(one, -0.5f, -0.5f);
     pie->one = one;
 
     pieview->pies = list_data_insert(pieview->pies, pie);
@@ -252,7 +258,7 @@ _pieview_update_end(struct taletransition *trans, struct nemoobject *obj)
 }
 
 void
-_pieview_update(PieView *pieview, _Win *win, struct taletransition *trans)
+_pieview_update(PieView *pieview, _Win *win, struct taletransition *trans, double delay, double to)
 {
     if (!pieview->dirty) return;
 
@@ -268,30 +274,49 @@ _pieview_update(PieView *pieview, _Win *win, struct taletransition *trans)
     LIST_FOR_EACH_REVERSE(pieview->pies, l, pie) {
         double end = ((double)pie->power/pow) * M_PI * 2 + start;
 
-        if (pieview->size_changed) {
+        if (pieview->resized) {
+            if (delay != 0) {
+                nemotale_transition_attach_dattr(trans,
+                        NTPATH_CIRCLE_ATR(pie->one), delay,
+                        NTPATH_CIRCLE(pie->one)->outr);
+                nemotale_transition_attach_dattr(trans,
+                        NTPATH_CIRCLE_ATINNERRADIUS(pie->one), delay,
+                        NTPATH_CIRCLE(pie->one)->inr);
+            }
             nemotale_transition_attach_dattr(trans,
-                    NTPATH_CIRCLE_ATR(pie->one), 1.0f, pieview->r);
+                    NTPATH_CIRCLE_ATR(pie->one), to, pieview->r);
             nemotale_transition_attach_dattr(trans,
-                    NTPATH_CIRCLE_ATINNERRADIUS(pie->one), 1.0f, pieview->ir);
+                    NTPATH_CIRCLE_ATINNERRADIUS(pie->one), to, pieview->ir);
         }
         nemotale_transition_attach_dattr(trans,
-                NTPATH_CIRCLE_ATSTARTANGLE(pie->one), 1.0f, start);
+                NTPATH_CIRCLE_ATSTARTANGLE(pie->one), to, start);
         nemotale_transition_attach_dattr(trans,
-                NTPATH_CIRCLE_ATENDANGLE(pie->one), 1.0f, end);
-        nemotale_transition_attach_dattrs(trans,
-                NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
-                4, 1.0f, pie->r, pie->g, pie->b, pie->a);
+                NTPATH_CIRCLE_ATENDANGLE(pie->one), to, end);
+
+       if (pieview->colored) {
+            if (delay != 0) {
+                struct pathpaint pp = NTPATH_STYLE(pie->one)->fill_paint;
+                nemotale_transition_attach_dattrs(trans,
+                        NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
+                        4, delay, pp.u.rgba[0], pp.u.rgba[1],
+                        pp.u.rgba[2], pp.u.rgba[3]);
+            }
+           nemotale_transition_attach_dattrs(trans,
+                   NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
+                   4, to, pie->r, pie->g, pie->b, pie->a);
+       }
         _win_trans_transform(win, trans, pie->one);
 
         start = end;
     }
-    if (pieview->size_changed) pieview->size_changed = false;
+    if (pieview->resized) pieview->resized = false;
+    if (pieview->colored) pieview->colored = false;
 
     // Remove animation
     LIST_FOR_EACH_REVERSE(pieview->pies_del, l, pie) {
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
-                4, 1.0f, pie->r, pie->g, pie->b, 0.0f);
+                4, to, pie->r, pie->g, pie->b, 0.0f);
     }
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_END,

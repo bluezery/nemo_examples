@@ -19,6 +19,6 @@ void _pieview_change_power(PieView *pieview, int idx, int pow);
 void _pieview_set_color(PieView *pieview, int idx, double r, double g, double b, double a);
 Pie *_pieview_add_ap(PieView *pieview, int power);
 void _pieview_del_ap(PieView *pieview, Pie *pie);
-void _pieview_update(PieView *pieview, _Win *win, struct taletransition *trans);
+void _pieview_update(PieView *pieview, _Win *win, struct taletransition *trans, double delay, double to);
 
 #endif

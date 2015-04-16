@@ -179,11 +179,10 @@ _win_get_userdata(_Win *win)
 /***** TRANSITION **************/
 /*******************************/
 static inline struct taletransition *
-_win_trans_create(_Win *win, int delay, int duration, uint32_t type)
+_win_trans_create(_Win *win, int delay, int duration)
 {
     struct taletransition *trans;
     trans = nemotale_transition_create(delay, duration);
-    nemotale_transition_attach_timing(trans, 1.0f, type);
 
     return trans;
 }
