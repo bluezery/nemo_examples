@@ -260,7 +260,7 @@ _cpuview_update(CpuView *cv)
     struct taletransition *trans;
     trans = nemotale_transition_create(0, TRANS_DURATION);
     nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
-    _win_trans_damage(ctx->win, trans, ctx->node, ctx->group);
+    _nemotale_transition_damage(trans, ctx->node, ctx->group);
 
     int i = 0;
     for (i = 0 ; i < cur->cnt ; i++) {
@@ -280,7 +280,7 @@ _cpuview_update(CpuView *cv)
             struct taletransition *text_trans;
             text_trans = nemotale_transition_create(0, TRANS_DURATION);
             nemotale_transition_attach_timing(text_trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
-            _win_trans_damage(ctx->win, text_trans, ctx->node, ctx->group);
+            _nemotale_transition_damage(text_trans, ctx->node, ctx->group);
 
             char percent[256];
             snprintf(percent, 255, "user %2d%%",
@@ -330,7 +330,7 @@ _cpuview_update(CpuView *cv)
             nemotale_transition_attach_event(text_trans,
                     NEMOTALE_TRANSITION_EVENT_END,
                     _cpuview_text_update_end, "p", cv);
-            _win_trans_render(ctx->win, text_trans, ctx->node, ctx->group);
+            _nemotale_transition_render(text_trans, ctx->node, ctx->group);
             _win_trans_do(ctx->win, text_trans);
         }
 
@@ -380,7 +380,7 @@ _cpuview_update(CpuView *cv)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_END,
             _cpuview_update_end, "p", cv);
-    _win_trans_render(ctx->win, trans, ctx->node, ctx->group);
+    _nemotale_transition_render(trans, ctx->node, ctx->group);
     _win_trans_do(ctx->win, trans);
 
     cv->trans = trans;
@@ -519,7 +519,7 @@ _cpuview_create(Context *ctx, int r, int w, int offset, int inoffset)
     struct taletransition *trans;
     trans = nemotale_transition_create(0, TRANS_DURATION);
     nemotale_transition_attach_timing(trans, 1.0f, NEMOEASE_CUBIC_OUT_TYPE);
-    _win_trans_damage(ctx->win, trans, ctx->node, ctx->group);
+    _nemotale_transition_damage(trans, ctx->node, ctx->group);
 
     int i = 0;
     for (i = 0 ; i < cur->cnt ; i++) {
@@ -566,7 +566,7 @@ _cpuview_create(Context *ctx, int r, int w, int offset, int inoffset)
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_END,
             _cpuview_update_end, "p", cv);
-    _win_trans_render(ctx->win, trans, ctx->node, ctx->group);
+    _nemotale_transition_render(trans, ctx->node, ctx->group);
     _win_trans_do(ctx->win, trans);
     cv->trans = trans;
 
@@ -638,7 +638,6 @@ int main(){
     struct nemotale *tale = _win_get_tale(win);
     struct nemocanvas *canvas = _win_get_canvas(win);
     nemocanvas_set_layer(canvas, NEMO_SURFACE_LAYER_TYPE_OVERLAY);
-    nemocanvas_set_anchor(canvas, -0.5f, -0.5f);
     nemotale_set_userdata(tale, ctx);
 
     struct talenode *node;

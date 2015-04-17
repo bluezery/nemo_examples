@@ -123,7 +123,6 @@ _win_create(struct nemotool *tool, _WinType type, int w, int h, nemotale_dispatc
         nemocanvas_set_size(canvas, w, h);
         nemocanvas_set_nemosurface(canvas, NEMO_SHELL_SURFACE_TYPE_NORMAL);
 	    nemocanvas_set_dispatch_frame(canvas, nemoclip_dispatch_canvas_frame);
-	    //nemocanvas_set_anchor(canvas, -0.5f, -0.5f);
 
         nemocanvas_buffer(canvas);
 
@@ -178,17 +177,8 @@ _win_get_userdata(_Win *win)
 /*******************************/
 /***** TRANSITION **************/
 /*******************************/
-static inline struct taletransition *
-_win_trans_create(_Win *win, int delay, int duration)
-{
-    struct taletransition *trans;
-    trans = nemotale_transition_create(delay, duration);
-
-    return trans;
-}
-
 static inline void
-_win_trans_damage(_Win *win, struct taletransition *trans, struct talenode *node, struct pathone *one)
+_nemotale_transition_damage(struct taletransition *trans, struct talenode *node, struct pathone *one)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
@@ -200,18 +190,16 @@ _win_trans_damage(_Win *win, struct taletransition *trans, struct talenode *node
 
 
 static inline void
-_win_trans_transform(_Win *win, struct taletransition *trans, struct pathone *one)
+_nemotale_transition_transform(struct taletransition *trans, struct pathone *one)
 {
+    nemotale_path_transform_enable(one);
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
             nemotale_handle_path_transform_event, "p", one);
-    nemotale_path_transform_enable(one);
-    nemotale_transition_attach_signal(trans,
-            NTPATH_DESTROY_SIGNAL(one));
 }
 
 static inline void
-_win_trans_render(_Win *win, struct taletransition *trans, struct talenode *node, struct pathone *one)
+_nemotale_transition_render(struct taletransition *trans, struct talenode *node, struct pathone *one)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,
@@ -229,14 +217,6 @@ _win_trans_do(_Win *win, struct taletransition *trans)
 
     nemotale_dispatch_transition(tale, trans);
     nemocanvas_dispatch_frame(canvas);
-}
-
-static inline void
-_win_trans_add_event_end(_Win *win, struct taletransition *trans, nemotale_transition_dispatch_t callback, void *ctx, void *data)
-{
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_END,
-            callback, ctx, data);
 }
 
 #endif

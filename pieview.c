@@ -59,7 +59,7 @@ _pieview_reloading(struct taletransition *trans, void *ctx, void *data)
 void
 _pieview_loading(_Win *win, struct taletransition *trans, PieView *pieview)
 {
-    _win_trans_transform(win, trans, pieview->loading_one);
+    _nemotale_transition_transform(trans, pieview->loading_one);
     _win_trans_add_event_end(win, trans, _pieview_reloading, win, pieview);
 
     nemotale_transition_attach_dattr(trans,
@@ -305,7 +305,9 @@ _pieview_update(PieView *pieview, _Win *win, struct taletransition *trans, doubl
                    NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
                    4, to, pie->r, pie->g, pie->b, pie->a);
        }
-        _win_trans_transform(win, trans, pie->one);
+       nemotale_transition_attach_signal(trans,
+               NTPATH_DESTROY_SIGNAL(pie->one));
+       _nemotale_transition_transform(trans, pie->one);
 
         start = end;
     }
@@ -317,8 +319,9 @@ _pieview_update(PieView *pieview, _Win *win, struct taletransition *trans, doubl
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(pie->one)),
                 4, to, pie->r, pie->g, pie->b, 0.0f);
+        nemotale_transition_attach_signal(trans,
+                NTPATH_DESTROY_SIGNAL(pie->one));
     }
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_END,
+    nemotale_transition_attach_event(trans, NEMOTALE_TRANSITION_EVENT_END,
             _pieview_update_end, "p", pieview);
 }
