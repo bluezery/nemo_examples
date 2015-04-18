@@ -199,7 +199,7 @@ _pieview_set_color(PieView *pieview, int idx, double r, double g, double b, doub
 }
 
 Pie *
-_pieview_add_ap(PieView *pieview, int power)
+_pieview_add_ap(PieView *pieview)
 {
     Pie *pie;
     struct pathone *one;
@@ -212,7 +212,6 @@ _pieview_add_ap(PieView *pieview, int power)
     }
 
     pie = calloc(sizeof(Pie), 1);
-    pie->power = power;
 
     pie->r = (double)rand()/RAND_MAX;
     pie->g = (double)rand()/RAND_MAX;
@@ -258,7 +257,7 @@ _pieview_update_end(struct taletransition *trans, struct nemoobject *obj)
 }
 
 void
-_pieview_update(PieView *pieview, _Win *win, struct taletransition *trans, double delay, double to)
+_pieview_update(PieView *pieview, _NemoWin *win, struct taletransition *trans, double delay, double to)
 {
     if (!pieview->dirty) return;
 
