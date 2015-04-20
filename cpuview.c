@@ -62,14 +62,14 @@ struct _CpuView {
     CpuStat *stat;
     PieView **pieviews;
 
-    char *str_user, *str_nice, *str_system, *str_idle;
     struct pathone *group;
     struct pathone *txt_name;
     struct pathone *txt_user;
     struct pathone *txt_nice;
     struct pathone *txt_system;
 
-    struct taletransition *trans, *text_trans, *move_trans;
+    struct taletransition *pie_trans, *text_trans, *move_trans;
+    struct nemolistener pie_trans_listener, text_trans_listener, move_trans_listener;
     struct nemotimer *timer;
 };
 
@@ -250,8 +250,9 @@ struct _Context {
 _cpuview_destroy(CpuView *cv)
 {
 
-    if (cv->trans) nemotale_transition_destroy(cv->trans);
-    if (cv->text_trans) nemotale_transition_destroy(cv->trans);
+    if (cv->pie_trans) nemotale_transition_destroy(cv->pie_trans);
+    if (cv->text_trans) nemotale_transition_destroy(cv->text_trans);
+    if (cv->move_trans) nemotale_transition_destroy(cv->move_trans);
     if (cv->timer) nemotimer_destroy(cv->timer);
 
     int i = 0;
@@ -261,10 +262,6 @@ _cpuview_destroy(CpuView *cv)
     free(cv->pieviews);
     _cpustat_free(cv->stat);
 
-    free(cv->str_user);
-    free(cv->str_nice);
-    free(cv->str_system);
-    free(cv->str_idle);
     nemotale_path_destroy_one(cv->txt_name);
     nemotale_path_destroy_one(cv->txt_user);
     nemotale_path_destroy_one(cv->txt_system);
@@ -272,28 +269,27 @@ _cpuview_destroy(CpuView *cv)
     nemotale_path_destroy_one(cv->group);
 }
 
-    static void
-_cpuview_update_end(struct taletransition *trans, struct nemoobject *obj)
+CpuView *_cv;
+
+static void
+_text_trans_destroyed(struct nemolistener *listener, void *data)
 {
-    CpuView *cv = nemoobject_igetp(obj, 0);
-    cv->trans = NULL;
+    ERR("destroy: %p", _cv->text_trans);
+    _cv->text_trans = NULL;
 }
 
-    static void
-_cpuview_text_update_end(struct taletransition *trans, struct nemoobject *obj)
-{
-    CpuView *cv = nemoobject_igetp(obj, 0);
-    cv->text_trans = NULL;
-}
-
-    static void
+static void
 _cpuview_dispatch_text_anim(CpuView *cv)
 {
     _NemoWin *win = cv->win;
     // Text transition (0th cpu, Total Usage)
     Cpu cpu = cv->stat->cpus[0];
+    bool force_update = false;
 
-    if (cv->text_trans) nemotale_transition_revoke(cv->text_trans);
+    if (cv->text_trans) {
+        nemotale_transition_destroy(cv->text_trans);
+        force_update = true;
+    }
 
     struct taletransition *trans;
     trans = nemotale_transition_create(0, TRANS_DURATION);
@@ -301,12 +297,10 @@ _cpuview_dispatch_text_anim(CpuView *cv)
     _nemotale_transition_damage(trans, win);
 
     char percent[256];
-    snprintf(percent, 255, "user %2d%%", cpu.user_share);
-    if (cv->str_user && strcmp(percent, cv->str_user)) {
+    if (force_update || (cpu.user_share != _pieview_get_power(cv->pieviews[0], 0))) {
+        snprintf(percent, 255, "user %2d%%", cpu.user_share);
         nemotale_path_load_text(cv->txt_user, percent,
                 strlen(percent));
-        free(cv->str_user);
-        cv->str_user = strdup(percent);
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(cv->txt_user)),
                 4, 0.5f, 1.0f, 1.0f, 0.0f, 0.0f);
@@ -315,12 +309,10 @@ _cpuview_dispatch_text_anim(CpuView *cv)
                 4, 1.0f, 1.0f, 1.0f, 0.0f, 0.8f);
     }
 
-    snprintf(percent, 255, "nice %2d%%", cpu.nice_share);
-    if (strcmp(percent, cv->str_nice)) {
+    if (force_update || (cpu.nice_share != _pieview_get_power(cv->pieviews[0], 1))) {
+        snprintf(percent, 255, "nice %2d%%", cpu.nice_share);
         nemotale_path_load_text(cv->txt_nice, percent,
                 strlen(percent));
-        free(cv->str_nice);
-        cv->str_nice = strdup(percent);
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(cv->txt_nice)),
                 4, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f);
@@ -329,12 +321,10 @@ _cpuview_dispatch_text_anim(CpuView *cv)
                 4, 1.0f, 0.0f, 1.0f, 0.0f, 0.8f);
     }
 
-    snprintf(percent, 255, "system %2d%%", cpu.system_share);
-    if (strcmp(percent, cv->str_system)) {
+    if (force_update || (cpu.system_share != _pieview_get_power(cv->pieviews[0], 2))) {
+        snprintf(percent, 255, "system %2d%%", cpu.system_share);
         nemotale_path_load_text(cv->txt_system, percent,
                 strlen(percent));
-        free(cv->str_system);
-        cv->str_system = strdup(percent);
         nemotale_transition_attach_dattrs(trans,
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(cv->txt_system)),
                 4, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f);
@@ -342,16 +332,27 @@ _cpuview_dispatch_text_anim(CpuView *cv)
                 NTSTYLE_FILL_ATCOLOR(NTPATH_STYLE(cv->txt_system)),
                 4, 1.0f, 0.0f, 0.0f, 1.0f, 0.8f);
     }
-    nemotale_transition_attach_event(trans, NEMOTALE_TRANSITION_EVENT_END,
-            _cpuview_text_update_end, "p", cv);
+    nemolist_init(&(cv->text_trans_listener.link));
+    cv->text_trans_listener.notify = _text_trans_destroyed;
+    nemosignal_add(NTTRANS_DESTROY_SIGNAL(trans), &cv->text_trans_listener);
     _nemotale_transition_dispatch(trans, win);
     cv->text_trans = trans;
+    ERR("create: %p", cv->text_trans);
 }
 
-    static void
+static void
+_pie_trans_destroyed(struct nemolistener *listener, void *data)
+{
+    struct taletransition *trans = data;
+    _cv->pie_trans = NULL;
+}
+
+static void
 _cpuview_dispatch_pie_anim(CpuView *cv)
 {
-    //if (cv->trans) nemotale_transition_revoke(cv->trans);
+    if (cv->pie_trans) {
+        nemotale_transition_destroy(cv->pie_trans);
+    }
     int i = 0;
     _NemoWin *win = cv->win;
     CpuStat *stat  = cv->stat;
@@ -407,10 +408,12 @@ _cpuview_dispatch_pie_anim(CpuView *cv)
         _pieview_update(pv, win, trans, delay, to);
     }
 
-    nemotale_transition_attach_event(trans, NEMOTALE_TRANSITION_EVENT_END,
-            _cpuview_update_end, "p", cv);
+    nemolist_init(&(cv->pie_trans_listener.link));
+    cv->pie_trans_listener.notify = _pie_trans_destroyed;
+    nemosignal_add(NTTRANS_DESTROY_SIGNAL(trans), &cv->pie_trans_listener);
+
     _nemotale_transition_dispatch(trans, win);
-    cv->trans = trans;
+    cv->pie_trans = trans;
 }
 
     static void
@@ -421,26 +424,26 @@ _cpuview_change(CpuView *cv)
         cv->state = 0;
     cv->state_changed = true;
 
-    if (cv->trans) {
-        nemotale_transition_revoke(cv->trans);
-        cv->trans = NULL;
+    if (cv->pie_trans) {
+        nemotale_transition_destroy(cv->pie_trans);
+        cv->pie_trans = NULL;
     }
     nemotimer_set_timeout(cv->timer, 16);
 }
 
-    static void
-_cpuview_move_anim_end(struct taletransition *trans, struct nemoobject *obj)
+static void
+_move_trans_destroyed(struct nemolistener *listener, void *data)
 {
-    CpuView *cv = nemoobject_igetp(obj, 0);
-    cv->move_trans = NULL;
+    _cv->move_trans = NULL;
 }
 
-    static void
+static void
 _cpuview_move_anim(CpuView *cv, int x, int y)
 {
-    ERR("(%p) %d %d", cv->move_trans, x, y);
     _NemoWin *win = cv->win;
-    if (cv->move_trans) nemotale_transition_revoke(cv->move_trans);
+    if (cv->move_trans) {
+        nemotale_transition_destroy(cv->move_trans);
+    }
 
     struct taletransition *trans;
     trans = nemotale_transition_create(0, TRANS_DURATION);
@@ -451,8 +454,9 @@ _cpuview_move_anim(CpuView *cv, int x, int y)
             1.0f, (double)x);
     nemotale_transition_attach_dattr(trans, NTPATH_TRANSFORM_ATY(cv->group),
             1.0f, (double)y);
-    nemotale_transition_attach_event(trans, NEMOTALE_TRANSITION_EVENT_END,
-            _cpuview_move_anim_end, "p", cv);
+    nemolist_init(&(cv->move_trans_listener.link));
+    cv->move_trans_listener.notify = _move_trans_destroyed;
+    nemosignal_add(NTTRANS_DESTROY_SIGNAL(trans), &cv->move_trans_listener);
     _nemotale_transition_dispatch(trans, win);
 
     cv->move_trans = trans;
@@ -461,11 +465,9 @@ _cpuview_move_anim(CpuView *cv, int x, int y)
     static void
 _cpuview_move(CpuView *cv, int x, int y)
 {
-    ERR("(%p) %d %d", cv->move_trans, x, y);
     _NemoWin *win = cv->win;
     if (cv->move_trans) {
-        nemotale_transition_revoke(cv->move_trans);
-        cv->move_trans = NULL;
+        nemotale_transition_destroy(cv->move_trans);
     }
 
     nemotale_path_translate(cv->group, x, y);
@@ -531,7 +533,6 @@ _cpuview_create(_NemoWin *win, int r, int w, int offset, int inoffset)
     nemotale_path_attach_one(group, one);
     nemotale_path_translate(one, 0, - 10);
     cv->txt_user = one;
-    cv->str_user = strdup("user  0%");
 
     one = nemotale_path_create_text();
     nemotale_path_set_id(one, "txt_system");
@@ -546,7 +547,6 @@ _cpuview_create(_NemoWin *win, int r, int w, int offset, int inoffset)
     nemotale_path_attach_one(group, one);
     nemotale_path_translate(one, 0, 15);
     cv->txt_system = one;
-    cv->str_system = strdup("system  0%");
 
     one = nemotale_path_create_text();
     nemotale_path_set_id(one, "txt_nice");
@@ -561,7 +561,6 @@ _cpuview_create(_NemoWin *win, int r, int w, int offset, int inoffset)
     nemotale_path_attach_one(group, one);
     nemotale_path_translate(one, 0, 40);
     cv->txt_nice = one;
-    cv->str_nice = strdup("nice  0%");
 
     CpuStat *stat = _cpustat_create();
     cv->stat = stat;
@@ -614,11 +613,12 @@ _cpuview_create(_NemoWin *win, int r, int w, int offset, int inoffset)
         cv->pieviews[i] = pv;
     }
 
-    nemotale_transition_attach_event(trans,
-            NEMOTALE_TRANSITION_EVENT_END,
-            _cpuview_update_end, "p", cv);
+    nemolist_init(&(cv->pie_trans_listener.link));
+    cv->pie_trans_listener.notify = _pie_trans_destroyed;
+    nemosignal_add(NTTRANS_DESTROY_SIGNAL(trans), &cv->pie_trans_listener);
+
     _nemotale_transition_dispatch(trans, win);
-    cv->trans = trans;
+    cv->pie_trans = trans;
 
     // Cpuview Update timer
     struct nemotool *tool = _nemowin_get_tool(win);
@@ -655,7 +655,6 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
     if (type & NEMOTALE_UP_EVENT) {
         struct pathone *one = tap->item;
         if (one) {
-            ERR("before anim");
             _cpuview_move_anim(cv, ctx->w/2, ctx->h/2);
         }
     }
@@ -699,7 +698,6 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
 
             ctx->prev_x = event->x;
             ctx->prev_y = event->y;
-            ERR("before move");
             _cpuview_move(cv, pos_x, ctx->h/2);
         }
     } else if (nemotale_is_single_click(tale, event, type)) {
@@ -736,6 +734,7 @@ int main(){
     CpuView *cv = _cpuview_create(win, pr, pw, offset, inoffset);
     _cpuview_move(cv, w/2, h/2);
     ctx->cv = cv;
+    _cv = cv;
 
     _nemowin_show(win);
 

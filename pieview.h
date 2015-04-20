@@ -11,7 +11,7 @@ void _pieview_set_data(PieView *pieview, void *data);
 PieView *_pieview_create(struct pathone *group, int r, int ir);
 void _pieview_destroy(PieView *pieview);
 int _pieview_count(PieView *pieview);
-int _pieview_get_power(PieView *pieview);
+int _pieview_get_power(PieView *pieview, int idx);
 Pie *_pieview_get_ap(PieView *pieview, int idx);
 void _pieview_resize(PieView *pieview, int r, int ir);
 void _pieview_move(PieView *pieview, int x, int y);

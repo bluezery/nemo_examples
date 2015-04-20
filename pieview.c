@@ -141,15 +141,10 @@ _pieview_count(PieView *pieview)
 }
 
 int
-_pieview_get_power(PieView *pieview)
+_pieview_get_power(PieView *pieview, int idx)
 {
-    int pow = 0;
-    List *l;
-    Pie *pie;
-    LIST_FOR_EACH(pieview->pies, l, pie) {
-        pow += pie->power;
-    }
-    return pow;
+    Pie *pie = list_idx_get_data(pieview->pies, idx);
+    return pie->power;
 }
 
 Pie *
@@ -261,12 +256,14 @@ _pieview_update(PieView *pieview, _NemoWin *win, struct taletransition *trans, d
 {
     if (!pieview->dirty) return;
 
-    int pow;
+    int pow = 0;
 
     List *l;
     Pie *pie;
 
-    pow = _pieview_get_power(pieview);
+    LIST_FOR_EACH(pieview->pies, l, pie) {
+        pow += pie->power;
+    }
     if (pow <= 0) return;
 
     double start = 0;
