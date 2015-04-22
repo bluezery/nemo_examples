@@ -183,7 +183,7 @@ _nemowin_create(struct nemotool *tool, _NemoWinType type, int w, int h, nemotale
     nemotale_path_attach_style(one, NULL);
     nemotale_path_set_operator(one, CAIRO_OPERATOR_SOURCE);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),
-            0.0f, 0.0f, 0.0f, 0.0f);
+            1.0f, 1.0f, 1.0f, 0.0f);
     nemotale_path_attach_one(group, one);
     win->bg = one;
 

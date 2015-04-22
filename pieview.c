@@ -221,6 +221,10 @@ _pieview_add_ap(PieView *pieview)
     nemotale_path_attach_one(pieview->group, one);
     nemotale_path_set_pie_circle(one, endangle, endangle);
     nemotale_path_set_anchor(one, -0.5f, -0.5f);
+    char buf[256];
+    snprintf(buf, 255, "pieview: radius:%d r:0.2%f g:0.2%f a:0.2%f",
+            pieview->r, pie->r, pie->g, pie->b);
+    nemotale_path_set_id(one, "pieview AP");
     pie->one = one;
 
     pieview->pies = list_data_insert(pieview->pies, pie);
