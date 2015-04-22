@@ -185,6 +185,7 @@ _pieview_set_color(PieView *pieview, int idx, double r, double g, double b, doub
 {
     Pie *pie = list_idx_get_data(pieview->pies, idx);
     if (!pie) return;
+
     pie->r = r;
     pie->g = g;
     pie->b = b;
