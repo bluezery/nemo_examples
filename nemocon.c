@@ -278,6 +278,12 @@ data_cb(NemoCon *con, char *data, size_t size, void *userdata)
     //ERR("[%p]: %p, %zud", con, data, size);
 }
 
+static void
+end_cb(NemoCon *con, void *userdata)
+{
+    ERR("xxx");
+}
+
 int main()
 {
     struct nemotool *tool = nemotool_create();
@@ -286,14 +292,17 @@ int main()
     NemoCon *con = nemocon_create(tool);
     nemocon_set_src(con, "http://www.google.co.kr");
     nemocon_set_data_callback(con, data_cb, con);
+    nemocon_set_end_callback(con, end_cb, con);
 
     con = nemocon_create(tool);
     nemocon_set_src(con, "http://www.naver.com");
     nemocon_set_data_callback(con, data_cb, con);
+    nemocon_set_end_callback(con, end_cb, con);
 
     con = nemocon_create(tool);
     nemocon_set_src(con, "http://www.daum.net");
     nemocon_set_data_callback(con, data_cb, con);
+    nemocon_set_end_callback(con, end_cb, con);
 
     nemocon_run(con);
 
