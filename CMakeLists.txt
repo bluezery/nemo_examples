@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(${PKGS_INCLUDE_DIRS})
 LINK_DIRECTORIES(${PKGS_LIBRARY_DIRS})
 
 ADD_LIBRARY(helper STATIC
-    util.c temp/talehelper.c cairo_view.c view.c text.c pieview.c
+    emp/talehelper.c helper/util.c helper/view.c helper/text.c helper/pieview.c
     )
 TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
@@ -32,9 +32,6 @@ TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
 #ADD_EXECUTABLE(future future.c)
 #TARGET_LINK_LIBRARIES(future helper "${PKGS_LIBRARIES}" m rt)
-
-ADD_EXECUTABLE(cpuview cpuview.c)
-TARGET_LINK_LIBRARIES(cpuview helper "${PKGS_LIBRARIES}" m rt)
 
 #ADD_EXECUTABLE(memview memview.c)
 #TARGET_LINK_LIBRARIES(memview helper "${PKGS_LIBRARIES}" m rt)
