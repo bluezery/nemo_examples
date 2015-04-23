@@ -8,8 +8,9 @@ SET(nemo_example_VERSION_MINOR 1)
 
 #FIXME: For including external headers
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/temp/")
+INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/helper/")
 
-PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool)
+PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool libcurl)
 
 FOREACH(i ${PKGS_CFLAGS})
     SET(CFLAGS "${CFLAGS} ${i}")
@@ -23,12 +24,12 @@ INCLUDE_DIRECTORIES(${PKGS_INCLUDE_DIRS})
 LINK_DIRECTORIES(${PKGS_LIBRARY_DIRS})
 
 ADD_LIBRARY(helper STATIC
-    emp/talehelper.c helper/util.c helper/view.c helper/text.c helper/pieview.c
+    temp/talehelper.c helper/util.c helper/view.c helper/text.c helper/pieview.c
     )
 TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
-#ADD_EXECUTABLE(nemotest nemotest.c)
-#TARGET_LINK_LIBRARIES(nemotest helper "${PKGS_LIBRARIES}" m rt)
+ADD_EXECUTABLE(nemocon nemocon.c)
+TARGET_LINK_LIBRARIES(nemocon helper "${PKGS_LIBRARIES}" m rt)
 
 #ADD_EXECUTABLE(future future.c)
 #TARGET_LINK_LIBRARIES(future helper "${PKGS_LIBRARIES}" m rt)
