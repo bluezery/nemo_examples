@@ -1107,7 +1107,6 @@ _tale_event(struct nemotale *tale, struct talenode *node, uint32_t type, struct 
                     one = nemotale_path_pick_one(ctx->cpuview->group,
                             event->x, event->y);
                     if (one) {
-                        ERR("%s", NTPATH_ID(one));
                         _cpuview_change(view);
                         nemotimer_set_timeout(ctx->timer, 16);
                     }
