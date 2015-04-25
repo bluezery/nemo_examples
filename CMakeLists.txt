@@ -10,7 +10,7 @@ SET(nemo_example_VERSION_MINOR 1)
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/temp/")
 INCLUDE_DIRECTORIES("${CMAKE_SOURCE_DIR}/helper/")
 
-PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool libcurl)
+PKG_CHECK_MODULES(PKGS REQUIRED pixman-1 cairo libpng harfbuzz freetype2 fontconfig nemotale nemotool libcurl json-c)
 
 FOREACH(i ${PKGS_CFLAGS})
     SET(CFLAGS "${CFLAGS} ${i}")
@@ -30,6 +30,9 @@ TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
 ADD_EXECUTABLE(nemocon nemocon.c)
 TARGET_LINK_LIBRARIES(nemocon helper "${PKGS_LIBRARIES}" m rt)
+
+ADD_EXECUTABLE(json json.c)
+TARGET_LINK_LIBRARIES(json helper "${PKGS_LIBRARIES}" m rt)
 
 #ADD_EXECUTABLE(future future.c)
 #TARGET_LINK_LIBRARIES(future helper "${PKGS_LIBRARIES}" m rt)
