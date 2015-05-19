@@ -257,7 +257,7 @@ _pieview_update_end(struct taletransition *trans, struct nemoobject *obj)
 }
 
 void
-_pieview_update(PieView *pieview, _NemoWin *win, struct taletransition *trans, double delay, double to)
+_pieview_update(PieView *pieview, NemoWin *win, struct taletransition *trans, double delay, double to)
 {
     if (!pieview->dirty) return;
 

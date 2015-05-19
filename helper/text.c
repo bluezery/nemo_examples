@@ -31,7 +31,6 @@
 #include "nemolist.h"
 
 #define EPSILON 0.001
-#define ROUND(a)
 #define EQUAL(a, b) ((a >b) ? ((a-b) < EPSILON) : ((b-a) < EPSILON))
 
 typedef struct _File_Map File_Map;

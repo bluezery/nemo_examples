@@ -28,11 +28,8 @@ ADD_LIBRARY(helper STATIC
     )
 TARGET_LINK_LIBRARIES(helper "${PKGS_LIBRARIES}" m rt)
 
-ADD_EXECUTABLE(nemocon nemocon.c)
-TARGET_LINK_LIBRARIES(nemocon helper "${PKGS_LIBRARIES}" m rt)
-
-ADD_EXECUTABLE(json json.c)
-TARGET_LINK_LIBRARIES(json helper "${PKGS_LIBRARIES}" m rt)
+ADD_EXECUTABLE(weather weather.c)
+TARGET_LINK_LIBRARIES(weather helper "${PKGS_LIBRARIES}" m rt)
 
 #ADD_EXECUTABLE(future future.c)
 #TARGET_LINK_LIBRARIES(future helper "${PKGS_LIBRARIES}" m rt)

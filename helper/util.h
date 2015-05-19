@@ -1,6 +1,7 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
+#include <nemotool.h>
 #include <cairo.h>
 #include <stdbool.h>   // bool
 #include <stdlib.h>     // calloc
@@ -164,5 +165,19 @@ list_idx_get_data(List *l, unsigned int idx)
     if (!l) return NULL;
     return l->data;
 }
+
+/*******************************************
+ * Nemo Connection *
+ * *****************************************/
+typedef struct _NemoCon NemoCon;
+typedef void (*NemoCon_Data_Callback)(NemoCon *con, char *data, size_t size, void *userdata);
+typedef void (*NemoCon_End_Callback)(NemoCon *con, char *data, size_t size, void *userdata);
+
+void nemocon_destroy(NemoCon *con);
+void nemocon_run(NemoCon *con);
+NemoCon *nemocon_create(struct nemotool *tool);
+void nemocon_set_url(NemoCon *con, const char *url);
+void nemocon_set_end_callback(NemoCon *con, NemoCon_End_Callback callback, void *userdata);
+void nemocon_set_data_callback(NemoCon *con, NemoCon_Data_Callback callback, void *userdata);
 
 #endif

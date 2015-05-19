@@ -19,10 +19,10 @@ typedef enum
 {
     WIN_TYPE_PIXMAN,
     WIN_TYPE_EGL
-} _NemoWinType;
+} NemoWinType;
 
-typedef struct __NemoWin {
-    _NemoWinType type;
+typedef struct _NemoWin {
+    NemoWinType type;
 
     int w, h;
 
@@ -43,10 +43,10 @@ typedef struct __NemoWin {
 
     bool dirty;
     void *userdata;
-} _NemoWin;
+} NemoWin;
 
 static inline void
-_nemowin_destroy(_NemoWin *win)
+nemowin_destroy(NemoWin *win)
 {
     nemotale_path_destroy_one(win->bg);
     nemotale_path_destroy_one(win->group);
@@ -64,7 +64,7 @@ _nemowin_destroy(_NemoWin *win)
 static void nemoclip_dispatch_canvas_frame(struct nemocanvas *canvas, uint64_t secs, uint32_t nsecs)
 {
     struct nemotale *tale = nemocanvas_get_userdata(canvas);
-    _NemoWin *win = nemotale_get_userdata(tale);
+    NemoWin *win = nemotale_get_userdata(tale);
 
     // Cpuview Update timer
 	if (secs == 0 && nsecs == 0) {
@@ -115,11 +115,11 @@ static void nemoclip_dispatch_canvas_frame(struct nemocanvas *canvas, uint64_t s
 	}
 }
 
-static inline _NemoWin *
-_nemowin_create(struct nemotool *tool, _NemoWinType type, int w, int h, nemotale_dispatch_event_t _event_cb)
+static inline NemoWin *
+nemowin_create(struct nemotool *tool, NemoWinType type, int w, int h, nemotale_dispatch_event_t _event_cb)
 {
-    _NemoWin *win;
-    win = calloc(sizeof(_NemoWin), 1);
+    NemoWin *win;
+    win = calloc(sizeof(NemoWin), 1);
     win->tool = tool;
     win->type = type;
     win->w = w;
@@ -181,6 +181,7 @@ _nemowin_create(struct nemotool *tool, _NemoWinType type, int w, int h, nemotale
     one = nemotale_path_create_rect(w, h);
     nemotale_path_set_id(one, "bg");
     nemotale_path_attach_style(one, NULL);
+    //nemotale_path_set_anchor(one, -0.5f, -0.5f);
     nemotale_path_set_operator(one, CAIRO_OPERATOR_SOURCE);
     nemotale_path_set_fill_color(NTPATH_STYLE(one),
             1.0f, 1.0f, 1.0f, 0.0f);
@@ -190,8 +191,14 @@ _nemowin_create(struct nemotool *tool, _NemoWinType type, int w, int h, nemotale
     return win;
 }
 
+static inline void
+nemowin_set_bg_color(NemoWin *win, double r, double g, double b, double a)
+{
+    nemotale_path_set_fill_color(NTPATH_STYLE(win->bg), r, g, b, a);
+}
+
 static inline struct nemocanvas *
-_nemowin_get_canvas(_NemoWin *win)
+nemowin_get_canvas(NemoWin *win)
 {
     if (win->type == WIN_TYPE_EGL) {
         return NTEGL_CANVAS(win->egl_canvas);
@@ -201,52 +208,52 @@ _nemowin_get_canvas(_NemoWin *win)
 }
 
 static inline struct nemotale *
-_nemowin_get_tale(_NemoWin *win)
+nemowin_get_tale(NemoWin *win)
 {
     return win->tale;
 }
 
 static inline struct nemotool *
-_nemowin_get_tool(_NemoWin *win)
+nemowin_get_tool(NemoWin *win)
 {
     return win->tool;
 }
 
 static inline struct talenode *
-_nemowin_get_node(_NemoWin *win)
+nemowin_get_node(NemoWin *win)
 {
     return win->node;
 }
 
 static inline struct pathone *
-_nemowin_get_group(_NemoWin *win)
+nemowin_get_group(NemoWin *win)
 {
     return win->group;
 }
 
 static inline void
-_nemowin_set_userdata(_NemoWin *win, void *userdata)
+nemowin_set_userdata(NemoWin *win, void *userdata)
 {
     win->userdata = userdata;
 }
 
 static inline void *
-_nemowin_get_userdata(_NemoWin *win)
+nemowin_get_userdata(NemoWin *win)
 {
     return win->userdata;
 }
 
 static inline void
-_nemowin_dirty(_NemoWin *win)
+nemowin_dirty(NemoWin *win)
 {
-    struct nemocanvas *canvas = _nemowin_get_canvas(win);
+    struct nemocanvas *canvas = nemowin_get_canvas(win);
 
     win->dirty = true;
     nemocanvas_dispatch_frame(canvas);
 }
 
 static inline void
-_nemowin_show(_NemoWin *win)
+nemowin_show(NemoWin *win)
 {
     nemotale_path_update_one(win->group);
     nemotale_node_render_path(win->node, win->group);
@@ -254,9 +261,9 @@ _nemowin_show(_NemoWin *win)
 }
 
 static inline void
-_nemowin_set_surface_type(_NemoWin *win, int type)
+nemowin_set_surface_type(NemoWin *win, int type)
 {
-    struct nemocanvas *canvas = _nemowin_get_canvas(win);
+    struct nemocanvas *canvas = nemowin_get_canvas(win);
     nemocanvas_set_layer(canvas, type);
 }
 
@@ -264,7 +271,7 @@ _nemowin_set_surface_type(_NemoWin *win, int type)
 /***** TRANSITION **************/
 /*******************************/
 static inline void
-_nemotale_transition_damage(struct taletransition *trans, _NemoWin *win)
+_nemotale_transition_damage(struct taletransition *trans, NemoWin *win)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_PREUPDATE,
@@ -284,7 +291,7 @@ _nemotale_transition_transform(struct taletransition *trans, struct pathone *one
 }
 
 static inline void
-_nemotale_transition_dispatch(struct taletransition *trans, _NemoWin *win)
+_nemotale_transition_dispatch(struct taletransition *trans, NemoWin *win)
 {
     nemotale_transition_attach_event(trans,
             NEMOTALE_TRANSITION_EVENT_POSTUPDATE,

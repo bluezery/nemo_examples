@@ -12,7 +12,7 @@
 
 typedef struct _NemoCon NemoCon;
 typedef void (*NemoCon_Data_Callback)(NemoCon *con, char *data, size_t size, void *userdata);
-typedef void (*NemoCon_End_Callback)(NemoCon *con, void *userdata);
+typedef void (*NemoCon_End_Callback)(NemoCon *con, char *data, size_t size, void *userdata);
 
 struct _NemoCon {
     struct nemolist link;
@@ -279,7 +279,7 @@ data_cb(NemoCon *con, char *data, size_t size, void *userdata)
 }
 
 static void
-end_cb(NemoCon *con, void *userdata)
+end_cb(NemoCon *con, void *data, size_t size, void *userdata)
 {
     ERR("xxx");
 }
